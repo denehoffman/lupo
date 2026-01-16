@@ -4,86 +4,62 @@ from typing import Literal
 
 from typing_extensions import TypeAlias
 
+from .expressions import (
+    BooleanExpression,
+    NumberExpression,
+    StringExpression,
+)
+
 Ostr: TypeAlias = str | None
 Obool: TypeAlias = bool | None
 Oint: TypeAlias = int | None
-
+StringLike: TypeAlias = str | StringExpression
+BoolLike: TypeAlias = bool | BooleanExpression
+IntLike: TypeAlias = int | NumberExpression
+Ostrlike: TypeAlias = StringLike | None
+Oboolstr: TypeAlias = BooleanExpression | str | None
+Oboollike: TypeAlias = BoolLike | None
+Ointlike: TypeAlias = IntLike | None
+StringOrBoolLike: TypeAlias = StringLike | BoolLike
 
 actions: ModuleType
-
+toolchains: ModuleType
+expressions: ModuleType
 
 class Step: ...
 
-
 def script(
-    name: str,
-    script: str,
+    name: StringLike,
+    script: StringLike,
     *,
-    condition: Ostr = None,
-    working_directory: Ostr = None,
+    condition: Oboolstr = None,
+    working_directory: Ostrlike = None,
     shell: Ostr = None,
     id: Ostr = None,  # noqa: A002
-    continue_on_error: Obool = None,
-    timeout_seconds: Oint = None,
+    env: Mapping[str, StringLike] | None = None,
+    continue_on_error: Oboollike = None,
+    timeout_minutes: Ointlike = None,
 ) -> Step: ...
-
-
 def action(
-    name: str,
+    name: StringLike,
     action: str,
     *,
     ref: Ostr = None,
     with_opts: Mapping | None = None,
-    args: Ostr = None,
-    entrypoint: Ostr = None,
-    condition: Ostr = None,
-    working_directory: Ostr = None,
+    args: Ostrlike = None,
+    entrypoint: Ostrlike = None,
+    condition: Oboolstr = None,
+    working_directory: Ostrlike = None,
     shell: Ostr = None,
     id: Ostr = None,  # noqa: A002
-    continue_on_error: Obool = None,
-    timeout_seconds: Oint = None,
+    env: Mapping[str, StringLike] | None = None,
+    continue_on_error: Oboollike = None,
+    timeout_minutes: Ointlike = None,
 ) -> Step: ...
-
-
-def checkout(
-    *,
-    name: Ostr = None,
-    version: str = 'v6',
-    repository: Ostr = None,
-    ref: Ostr = None,
-    token: Ostr = None,
-    ssh_key: Ostr = None,
-    ssh_known_hosts: Ostr = None,
-    ssh_strict: Obool = None,
-    ssh_user: Ostr = None,
-    persist_credentials: Obool = None,
-    path: Ostr = None,
-    clean: Obool = None,
-    filter: Ostr = None,  # noqa: A002
-    sparse_checkout: Ostr = None,
-    sparse_checkout_cone_mode: Obool = None,
-    fetch_depth: Oint = None,
-    fetch_tags: Obool = None,
-    show_progress: Obool = None,
-    lfs: Obool = None,
-    submodules: Obool = None,
-    get_safe_directory: Obool = None,
-    github_server_url: Ostr = None,
-    args: Ostr = None,
-    entrypoint: Ostr = None,
-    condition: Ostr = None,
-    working_directory: Ostr = None,
-    shell: Ostr = None,
-    id: Ostr = None,  # noqa: A002
-    continue_on_error: Obool = None,
-    timeout_seconds: Oint = None,
-) -> Step: ...
-
 
 RW: TypeAlias = Literal['read', 'write', 'none'] | None
 RO: TypeAlias = Literal['read', 'none'] | None
 WO: TypeAlias = Literal['write', 'none'] | None
-
 
 class Permissions:
     def __init__(
@@ -111,89 +87,81 @@ class Permissions:
     @staticmethod
     def write_all() -> Permissions: ...
 
-
 class RunsOnSpec:
-    def __init__(self, group: str, labels: str) -> None: ...
+    def __init__(self, group: StringLike, labels: StringLike) -> None: ...
     @staticmethod
-    def group(group: str) -> RunsOnSpec: ...
+    def group(group: StringLike) -> RunsOnSpec: ...
     @staticmethod
-    def labels(labels: str) -> RunsOnSpec: ...
-
+    def labels(labels: StringLike) -> RunsOnSpec: ...
 
 class RunsOn:
-    def __init__(self, *args: str) -> None: ...
+    def __init__(self, *args: StringLike) -> None: ...
     @staticmethod
     def spec(spec: RunsOnSpec) -> RunsOn: ...
 
-
 class Environment:
-    def __init__(self, name: str, url: Ostr = None) -> None: ...
-
+    def __init__(self, name: StringLike, url: Ostrlike = None) -> None: ...
 
 class Concurrency:
-    def __init__(self, group: str, cancel_in_progress: bool = True) -> None: ...
+    def __init__(self, group: StringLike, cancel_in_progress: Oboollike = None) -> None: ...
 
+class RunDefaults:
+    def __init__(self, *, shell: Ostrlike = None, working_directory: Ostrlike = None) -> None: ...
 
 class Defaults:
-    def __init__(self, *, shell: str, working_directory: str) -> None: ...
-    @staticmethod
-    def shell(shell: str) -> Defaults: ...
-    @staticmethod
-    def working_directory(working_directory: str) -> Defaults: ...
-
+    def __init__(
+        self, *, defaults: Mapping[str, str] | None = None, run_defaults: RunDefaults | None = None
+    ) -> None: ...
 
 class Matrix:
     def __init__(
         self, *, include: Sequence | None = None, exclude: Sequence | None = None, matrix: Mapping | None = None
     ) -> None: ...
 
-
 class Strategy:
-    def __init__(self, *, matrix: Matrix | None = None, fast_fail: Obool = None, max_parallel: Oint = None) -> None: ...
-
+    def __init__(
+        self, *, matrix: Matrix | None = None, fast_fail: Oboollike = None, max_parallel: Ointlike = None
+    ) -> None: ...
 
 class Credentials:
-    def __init__(self, username: str, password: str) -> None: ...
-
+    def __init__(self, username: StringLike, password: StringLike) -> None: ...
 
 class Container:
     def __init__(
         self,
-        image: str,
+        image: StringLike,
         *,
         credentials: Credentials | None = None,
-        env: Mapping[str, str] | None = None,
-        ports: Sequence[int] | None = None,
-        volumes: Sequence[str] | None = None,
-        options: Ostr = None,
+        env: Mapping[str, StringLike] | None = None,
+        ports: Sequence[IntLike] | None = None,
+        volumes: Sequence[StringLike] | None = None,
+        options: Ostrlike = None,
     ) -> None: ...
 
-
 class JobSecrets:
-    def __init__(self, secrets: Mapping[str, str]) -> None: ...
+    def __init__(self, secrets: Mapping[str, StringLike]) -> None: ...
     @staticmethod
     def inherit() -> JobSecrets: ...
-
 
 class Job:
     def __init__(
         self,
         steps: Sequence[Step],
         *,
-        name: Ostr = None,
+        name: Ostrlike = None,
         permissions: Permissions | None = None,
         needs: Sequence[str] | None = None,
-        condition: Ostr = None,
-        runs_on: RunsOnSpec | Sequence[str] | str | None = None,
+        condition: Oboolstr = None,
+        runs_on: RunsOnSpec | Sequence[StringLike] | StringLike | None = None,
         snapshot: Ostr = None,
         environment: Environment | None = None,
         concurrency: Concurrency | None = None,
-        outputs: Mapping[str, str] | None = None,
-        env: Mapping[str, str] | None = None,
+        outputs: Mapping[str, StringLike] | None = None,
+        env: Mapping[str, StringLike] | None = None,
         defaults: Defaults | None = None,
         timeout_minutes: Oint = None,
         strategy: Strategy | None = None,
-        continue_on_error: str | bool | None = None,
+        continue_on_error: StringOrBoolLike | None = None,
         container: Container | None = None,
         services: Mapping[str, Container] | None = None,
         uses: Ostr = None,
@@ -201,10 +169,8 @@ class Job:
         secrets: JobSecrets | None = None,
     ) -> None: ...
 
-
 class BranchProtectionRuleEvent:
     def __init__(self, *, created: bool = False, edited: bool = False, deleted: bool = False) -> None: ...
-
 
 class CheckRunEvent:
     def __init__(
@@ -216,10 +182,8 @@ class CheckRunEvent:
         requested_action: bool = False,
     ) -> None: ...
 
-
 class CheckSuiteEvent:
     def __init__(self, *, created: bool = False) -> None: ...
-
 
 class DiscussionEvent:
     def __init__(
@@ -240,18 +204,14 @@ class DiscussionEvent:
         unanswered: bool = False,
     ) -> None: ...
 
-
 class DiscussionCommentEvent:
     def __init__(self, *, created: bool = False, edited: bool = False, deleted: bool = False) -> None: ...
-
 
 class ImageVersionEvent:
     def __init__(self, *, names: Sequence[str] | None = None, versions: Sequence[str] | None = None) -> None: ...
 
-
 class IssueCommentEvent:
     def __init__(self, *, created: bool = False, edited: bool = False, deleted: bool = False) -> None: ...
-
 
 class IssuesEvent:
     def __init__(
@@ -277,14 +237,11 @@ class IssuesEvent:
         untyped: bool = False,
     ) -> None: ...
 
-
 class LabelEvent:
     def __init__(self, *, created: bool = False, edited: bool = False, deleted: bool = False) -> None: ...
 
-
 class MergeGroupEvent:
     def __init__(self, *, checks_requested: bool = False) -> None: ...
-
 
 class MilestoneEvent:
     def __init__(
@@ -296,7 +253,6 @@ class MilestoneEvent:
         edited: bool = False,
         deleted: bool = False,
     ) -> None: ...
-
 
 class PullRequestEvent:
     def __init__(
@@ -310,6 +266,7 @@ class PullRequestEvent:
         unassigned: bool = False,
         labeled: bool = False,
         unlabeled: bool = False,
+        opened: bool = False,
         edited: bool = False,
         closed: bool = False,
         reopened: bool = False,
@@ -328,14 +285,11 @@ class PullRequestEvent:
         auto_merge_disabled: bool = False,
     ) -> None: ...
 
-
 class PullRequestReviewEvent:
     def __init__(self, *, submitted: bool = False, edited: bool = False, dismissed: bool = False) -> None: ...
 
-
 class PullRequestReviewCommentEvent:
     def __init__(self, *, created: bool = False, edited: bool = False, deleted: bool = False) -> None: ...
-
 
 class PushEvent:
     def __init__(
@@ -349,10 +303,8 @@ class PushEvent:
         paths_ignore: Sequence[str] | None = None,
     ) -> None: ...
 
-
 class RegistryPackageEvent:
     def __init__(self, *, published: bool = False, updated: bool = False) -> None: ...
-
 
 class ReleaseEvent:
     def __init__(
@@ -367,10 +319,8 @@ class ReleaseEvent:
         released: bool = False,
     ) -> None: ...
 
-
 class RepositoryDispatchEvent:
     def __init__(self, *, types: Sequence[str] | None = None) -> None: ...
-
 
 class Minute:
     def __init__(self, minute: int | Sequence[int]) -> None: ...
@@ -379,14 +329,12 @@ class Minute:
     @staticmethod
     def every(interval: int, *, start: Oint = None) -> Minute: ...
 
-
 class Hour:
     def __init__(self, minute: int | Sequence[int]) -> None: ...
     @staticmethod
     def between(start: int, end: int) -> Hour: ...
     @staticmethod
     def every(interval: int, *, start: Oint = None) -> Hour: ...
-
 
 class Day:
     def __init__(self, minute: int | Sequence[int]) -> None: ...
@@ -395,7 +343,6 @@ class Day:
     @staticmethod
     def every(interval: int, *, start: Oint = None) -> Day: ...
 
-
 class Month:
     def __init__(self, minute: int | Sequence[int]) -> None: ...
     @staticmethod
@@ -403,14 +350,12 @@ class Month:
     @staticmethod
     def every(interval: int, *, start: Oint = None) -> Month: ...
 
-
 class DayOfWeek:
     def __init__(self, minute: int | Sequence[int]) -> None: ...
     @staticmethod
     def between(start: int, end: int) -> DayOfWeek: ...
     @staticmethod
     def every(interval: int, *, start: Oint = None) -> DayOfWeek: ...
-
 
 class Cron:
     def __init__(
@@ -423,31 +368,25 @@ class Cron:
         day_of_week: DayOfWeek | None = None,
     ) -> None: ...
 
-
 class ScheduleEvent:
     def __init__(self, *, crons: Sequence[Cron] | None = None) -> None: ...
-
 
 class WatchEvent:
     def __init__(self, *, started: bool = False) -> None: ...
 
-
 class WorkflowInput:
     @staticmethod
-    def boolean(*, description: Ostr = None, default: Obool = None, required: Obool = None) -> WorkflowInput: ...
+    def boolean(*, description: Ostr = None, default: Oboollike = None, required: Obool = None) -> WorkflowInput: ...
     @staticmethod
-    def number(*, description: Ostr = None, default: Oint = None, required: Obool = None) -> WorkflowInput: ...
+    def number(*, description: Ostr = None, default: Ointlike = None, required: Obool = None) -> WorkflowInput: ...
     @staticmethod
-    def string(*, description: Ostr = None, default: Ostr = None, required: Obool = None) -> WorkflowInput: ...
-
+    def string(*, description: Ostr = None, default: Ostrlike = None, required: Obool = None) -> WorkflowInput: ...
 
 class WorkflowOutput:
-    def __init__(self, value: str, *, description: Ostr = None) -> None: ...
-
+    def __init__(self, value: StringLike, *, description: Ostr = None) -> None: ...
 
 class WorkflowSecret:
     def __init__(self, *, description: Ostr = None, required: Obool = None) -> None: ...
-
 
 class WorkflowCallEvent:
     def __init__(
@@ -457,7 +396,6 @@ class WorkflowCallEvent:
         outputs: Mapping[str, WorkflowOutput] | None = None,
         secrets: Mapping[str, WorkflowSecret] | None = None,
     ) -> None: ...
-
 
 class WorkflowDispatchInput:
     @staticmethod
@@ -475,10 +413,8 @@ class WorkflowDispatchInput:
     @staticmethod
     def string(*, description: Ostr = None, default: Ostr = None, required: Obool = None) -> WorkflowDispatchInput: ...
 
-
 class WorkflowDispatchEvent:
     def __init__(self, *, inputs: Mapping[str, WorkflowDispatchInput] | None = None) -> None: ...
-
 
 class WorkflowRunEvent:
     def __init__(
@@ -491,7 +427,6 @@ class WorkflowRunEvent:
         branches: Sequence[str] | None = None,
         branches_ignore: Sequence[str] | None = None,
     ) -> None: ...
-
 
 class Events:
     def __init__(
@@ -530,7 +465,6 @@ class Events:
         workflow_run: WorkflowRunEvent | None = None,
     ) -> None: ...
 
-
 class Workflow:
     def __init__(
         self,
@@ -538,21 +472,18 @@ class Workflow:
         jobs: Mapping[str, Job],
         on: Events,
         name: Ostr = None,
-        run_name: Ostr = None,
+        run_name: Ostrlike = None,
         permissions: Permissions | None = None,
-        env: Mapping[str, str] | None = None,
+        env: Mapping[str, StringLike] | None = None,
         defaults: Defaults | None = None,
-        run_defaults: Defaults | None = None,
         concurrency: Concurrency | None = None,
     ) -> None: ...
-
 
 __all__ = [
     'BranchProtectionRuleEvent',
     'CheckRunEvent',
     'CheckSuiteEvent',
     'Concurrency',
-    'Container',
     'Container',
     'Credentials',
     'Cron',
@@ -583,6 +514,8 @@ __all__ = [
     'RegistryPackageEvent',
     'ReleaseEvent',
     'RepositoryDispatchEvent',
+    'RunDefaults',
+    'RunsOn',
     'RunsOnSpec',
     'ScheduleEvent',
     'Step',
@@ -597,5 +530,7 @@ __all__ = [
     'WorkflowRunEvent',
     'WorkflowSecret',
     'action',
+    'actions',
     'script',
+    'toolchains',
 ]

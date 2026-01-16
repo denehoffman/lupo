@@ -396,15 +396,49 @@ mod lupo {
 
         use super::*;
 
+        type StringLike = Either<StringExpression, String>;
+        type BoolLike = Either<BooleanExpression, bool>;
+        type NumberLike = Either<NumberExpression, f64>;
+
+        fn render_string_like(value: StringLike) -> String {
+            match value {
+                Either::A(expr) => expr.to_string(),
+                Either::B(raw) => escape_string(&raw),
+            }
+        }
+
+        fn render_bool_like(value: BoolLike) -> String {
+            match value {
+                Either::A(expr) => expr.to_string(),
+                Either::B(raw) => {
+                    if raw {
+                        "true".to_string()
+                    } else {
+                        "false".to_string()
+                    }
+                }
+            }
+        }
+
+        fn render_number_like(value: NumberLike) -> String {
+            match value {
+                Either::A(expr) => expr.to_string(),
+                Either::B(raw) => raw.to_string(),
+            }
+        }
+
         pub trait YamlExpression {
             fn stringify(&self) -> &str;
+            fn as_expression_string(&self) -> String {
+                format!("${{{{ {} }}}}", self.stringify())
+            }
         }
         impl<T> Yamlable for &T
         where
             T: YamlExpression,
         {
             fn as_yaml(&self) -> Yaml {
-                Yaml::Real(format!("${{{{ {} }}}}", self.stringify()))
+                Yaml::Real(self.as_expression_string())
             }
         }
 
@@ -424,32 +458,39 @@ mod lupo {
         #[pymethods]
         impl BooleanExpression {
             fn as_num(&self) -> NumberExpression {
-                NumberExpression(self.stringify().to_string())
+                NumberExpression(self.to_string())
             }
             fn as_str(&self) -> StringExpression {
-                StringExpression(self.stringify().to_string())
+                StringExpression(self.to_string())
             }
             fn as_obj(&self) -> ObjectExpression {
-                ObjectExpression(self.stringify().to_string())
+                ObjectExpression(self.to_string())
             }
             fn __invert__(&self) -> Self {
-                Self(format!("!({})", self.stringify()))
+                Self(format!("!({})", self))
             }
-            fn __and__(&self, other: BooleanExpression) -> Self {
-                Self(format!("({} && {})", self.stringify(), other.stringify()))
+            fn __and__(&self, other: BoolLike) -> Self {
+                let other = render_bool_like(other);
+                Self(format!("({} && {})", self, other))
             }
-            fn __or__(&self, other: BooleanExpression) -> Self {
-                Self(format!("({} || {})", self.stringify(), other.stringify()))
+            fn __or__(&self, other: BoolLike) -> Self {
+                let other = render_bool_like(other);
+                Self(format!("({} || {})", self, other))
             }
             // TODO: if-then with && + || ? How do we define the arguments and output?
-            fn __eq__(&self, other: BooleanExpression) -> Self {
-                Self(format!("({} == {})", self.stringify(), other.stringify()))
+            fn __eq__(&self, other: BoolLike) -> Self {
+                let other = render_bool_like(other);
+                Self(format!("({} == {})", self, other))
             }
-            fn __ne__(&self, other: BooleanExpression) -> Self {
-                Self(format!("({} != {})", self.stringify(), other.stringify()))
+            fn __ne__(&self, other: BoolLike) -> Self {
+                let other = render_bool_like(other);
+                Self(format!("({} != {})", self, other))
             }
             fn to_json(&self) -> ObjectExpression {
-                ObjectExpression(format!("toJSON({})", self.stringify()))
+                ObjectExpression(format!("toJSON({})", self))
+            }
+            fn __str__(&self) -> String {
+                self.as_expression_string()
             }
         }
         #[pyfunction]
@@ -484,34 +525,43 @@ mod lupo {
         #[pymethods]
         impl NumberExpression {
             fn as_bool(&self) -> BooleanExpression {
-                BooleanExpression(self.stringify().to_string())
+                BooleanExpression(self.to_string())
             }
             fn as_str(&self) -> StringExpression {
-                StringExpression(self.stringify().to_string())
+                StringExpression(self.to_string())
             }
             fn as_obj(&self) -> ObjectExpression {
-                ObjectExpression(self.stringify().to_string())
+                ObjectExpression(self.to_string())
             }
-            fn __lt__(&self, other: NumberExpression) -> Self {
-                Self(format!("({} < {})", self.stringify(), other.stringify()))
+            fn __lt__(&self, other: NumberLike) -> BooleanExpression {
+                let other = render_number_like(other);
+                BooleanExpression(format!("({} < {})", self, other))
             }
-            fn __le__(&self, other: NumberExpression) -> Self {
-                Self(format!("({} <= {})", self.stringify(), other.stringify()))
+            fn __le__(&self, other: NumberLike) -> BooleanExpression {
+                let other = render_number_like(other);
+                BooleanExpression(format!("({} <= {})", self, other))
             }
-            fn __gt__(&self, other: NumberExpression) -> Self {
-                Self(format!("({} > {})", self.stringify(), other.stringify()))
+            fn __gt__(&self, other: NumberLike) -> BooleanExpression {
+                let other = render_number_like(other);
+                BooleanExpression(format!("({} > {})", self, other))
             }
-            fn __ge__(&self, other: NumberExpression) -> Self {
-                Self(format!("({} >= {})", self.stringify(), other.stringify()))
+            fn __ge__(&self, other: NumberLike) -> BooleanExpression {
+                let other = render_number_like(other);
+                BooleanExpression(format!("({} >= {})", self, other))
             }
-            fn __eq__(&self, other: NumberExpression) -> Self {
-                Self(format!("({} == {})", self.stringify(), other.stringify()))
+            fn __eq__(&self, other: NumberLike) -> BooleanExpression {
+                let other = render_number_like(other);
+                BooleanExpression(format!("({} == {})", self, other))
             }
-            fn __ne__(&self, other: NumberExpression) -> Self {
-                Self(format!("({} != {})", self.stringify(), other.stringify()))
+            fn __ne__(&self, other: NumberLike) -> BooleanExpression {
+                let other = render_number_like(other);
+                BooleanExpression(format!("({} != {})", self, other))
             }
             fn to_json(&self) -> ObjectExpression {
-                ObjectExpression(format!("toJSON({})", self.stringify()))
+                ObjectExpression(format!("toJSON({})", self))
+            }
+            fn __str__(&self) -> String {
+                self.as_expression_string()
             }
         }
         #[pyclass]
@@ -530,80 +580,89 @@ mod lupo {
         #[pymethods]
         impl StringExpression {
             fn as_bool(&self) -> BooleanExpression {
-                BooleanExpression(self.stringify().to_string())
+                BooleanExpression(self.to_string())
             }
             fn as_num(&self) -> NumberExpression {
-                NumberExpression(self.stringify().to_string())
+                NumberExpression(self.to_string())
             }
             fn as_obj(&self) -> ObjectExpression {
-                ObjectExpression(self.stringify().to_string())
+                ObjectExpression(self.to_string())
             }
-            fn contains(&self, other: StringExpression) -> BooleanExpression {
-                BooleanExpression(format!(
-                    "contains({}, {})",
-                    self.stringify(),
-                    other.stringify()
-                ))
+            fn __eq__(&self, other: StringLike) -> BooleanExpression {
+                let other = render_string_like(other);
+                BooleanExpression(format!("({} == {})", self, other))
             }
-            fn starts_with(&self, other: StringExpression) -> BooleanExpression {
-                BooleanExpression(format!(
-                    "startsWith({}, {})",
-                    self.stringify(),
-                    other.stringify()
-                ))
+            fn __ne__(&self, other: StringLike) -> BooleanExpression {
+                let other = render_string_like(other);
+                BooleanExpression(format!("({} != {})", self, other))
             }
-            fn ends_with(&self, other: StringExpression) -> BooleanExpression {
-                BooleanExpression(format!(
-                    "endsWith({}, {})",
-                    self.stringify(),
-                    other.stringify()
-                ))
+            fn contains(&self, other: StringLike) -> BooleanExpression {
+                let other = render_string_like(other);
+                BooleanExpression(format!("contains({}, {})", self, other))
             }
-            fn format(&self, args: Vec<StringExpression>) -> StringExpression {
+            fn starts_with(&self, other: StringLike) -> BooleanExpression {
+                let other = render_string_like(other);
+                BooleanExpression(format!("startsWith({}, {})", self, other))
+            }
+            fn ends_with(&self, other: StringLike) -> BooleanExpression {
+                let other = render_string_like(other);
+                BooleanExpression(format!("endsWith({}, {})", self, other))
+            }
+            fn format(&self, args: Vec<StringLike>) -> StringExpression {
                 StringExpression(format!(
                     "format({}, {})",
-                    self.stringify(),
-                    args.iter()
-                        .map(|a| a.stringify().to_string())
+                    self,
+                    args.into_iter()
+                        .map(render_string_like)
                         .collect::<Vec<String>>()
                         .join(", ")
                 ))
             }
             // I don't think we need join for single strings despite the docs
             fn to_json(&self) -> ObjectExpression {
-                ObjectExpression(format!("toJSON({})", self.stringify()))
+                ObjectExpression(format!("toJSON({})", self))
             }
             fn from_json_to_bool(&self) -> BooleanExpression {
-                BooleanExpression(format!("fromJSON({})", self.stringify()))
+                BooleanExpression(format!("fromJSON({})", self))
             }
             fn from_json_to_num(&self) -> NumberExpression {
-                NumberExpression(format!("fromJSON({})", self.stringify()))
+                NumberExpression(format!("fromJSON({})", self))
             }
             fn from_json_to_str(&self) -> Self {
-                Self(format!("fromJSON({})", self.stringify()))
+                Self(format!("fromJSON({})", self))
             }
             fn from_json_to_array(&self) -> ArrayExpression {
-                ArrayExpression(format!("fromJSON({})", self.stringify()))
+                ArrayExpression(format!("fromJSON({})", self))
             }
             fn from_json_to_obj(&self) -> ObjectExpression {
-                ObjectExpression(format!("fromJSON({})", self.stringify()))
+                ObjectExpression(format!("fromJSON({})", self))
             }
-            fn hash_files(&self, others: Option<Vec<StringExpression>>) -> StringExpression {
+            fn hash_files(&self, others: Option<Vec<StringLike>>) -> StringExpression {
                 if let Some(others) = others {
                     StringExpression(format!(
                         "hashFiles({}, {})",
-                        self.stringify(),
+                        self,
                         others
-                            .iter()
-                            .map(|s| s.stringify().to_string())
+                            .into_iter()
+                            .map(render_string_like)
                             .collect::<Vec<String>>()
                             .join(", ")
                     ))
                 } else {
-                    StringExpression(format!("hashFiles({})", self.stringify()))
+                    StringExpression(format!("hashFiles({})", self))
                 }
             }
+            fn __str__(&self) -> String {
+                self.as_expression_string()
+            }
         }
+
+        impl Display for ArrayExpression {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.stringify())
+            }
+        }
+
         #[pyclass]
         #[derive(Clone)]
         pub struct ArrayExpression(String);
@@ -615,27 +674,27 @@ mod lupo {
         #[pymethods]
         impl ArrayExpression {
             fn as_num(&self) -> NumberExpression {
-                NumberExpression(self.stringify().to_string())
+                NumberExpression(self.to_string())
             }
             fn as_obj(&self) -> ObjectExpression {
-                ObjectExpression(self.stringify().to_string())
+                ObjectExpression(self.to_string())
             }
             fn contains(&self, other: ObjectExpression) -> BooleanExpression {
-                BooleanExpression(format!(
-                    "contains({}, {})",
-                    self.stringify(),
-                    other.stringify()
-                ))
+                BooleanExpression(format!("contains({}, {})", self, other.stringify()))
             }
-            fn join(&self, separator: Option<StringExpression>) -> StringExpression {
+            fn join(&self, separator: Option<StringLike>) -> StringExpression {
                 if let Some(sep) = separator {
-                    StringExpression(format!("join({}, {})", self.stringify(), sep.stringify()))
+                    let sep = render_string_like(sep);
+                    StringExpression(format!("join({}, {})", self, sep))
                 } else {
-                    StringExpression(format!("join({})", self.stringify()))
+                    StringExpression(format!("join({})", self))
                 }
             }
             fn to_json(&self) -> ObjectExpression {
-                ObjectExpression(format!("toJSON({})", self.stringify()))
+                ObjectExpression(format!("toJSON({})", self))
+            }
+            fn __str__(&self) -> String {
+                self.as_expression_string()
             }
         }
         #[pyclass]
@@ -644,6 +703,20 @@ mod lupo {
         impl YamlExpression for ObjectExpression {
             fn stringify(&self) -> &str {
                 &self.0
+            }
+        }
+        impl Display for ObjectExpression {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.stringify())
+            }
+        }
+        impl ObjectExpression {
+            fn format_access(base: &str, key: &str) -> String {
+                if validate_string(key) {
+                    format!("{base}.{key}")
+                } else {
+                    format!("{base}[{}]", escape_string(key))
+                }
             }
         }
         #[pymethods]
@@ -660,7 +733,6 @@ mod lupo {
             fn as_array(&self) -> ArrayExpression {
                 ArrayExpression(self.stringify().to_string())
             }
-            // TODO: contains? as_array?
             fn to_json(&self) -> ObjectExpression {
                 ObjectExpression(format!("toJSON({})", self.stringify()))
             }
@@ -679,8 +751,13 @@ mod lupo {
             fn from_json_to_obj(&self) -> ObjectExpression {
                 ObjectExpression(format!("fromJSON({})", self.stringify()))
             }
-            fn get(&self, key: StringExpression) -> ObjectExpression {
-                ObjectExpression(format!("{}[{}]", self.stringify(), key.stringify()))
+            #[classattr]
+            const __contains__: Option<Py<PyAny>> = None;
+            fn __getitem__(&self, key: String) -> ObjectExpression {
+                ObjectExpression(Self::format_access(self.stringify(), &key))
+            }
+            fn __str__(&self) -> String {
+                self.as_expression_string()
             }
         }
 
@@ -861,7 +938,7 @@ mod lupo {
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
-                StringExpression(format!("env.{}", key))
+                StringExpression(ObjectExpression::format_access("env", &key))
             }
         }
 
@@ -876,7 +953,7 @@ mod lupo {
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
-                StringExpression(format!("vars.{}", key))
+                StringExpression(ObjectExpression::format_access("vars", &key))
             }
         }
 
@@ -904,19 +981,19 @@ mod lupo {
         impl JobServicesIdContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression(format!("job.services.{}", self.0))
+                ObjectExpression(self.0.clone())
             }
             #[getter]
             fn id(&self) -> StringExpression {
-                StringExpression(format!("job.services.{}.id", self.0))
+                StringExpression(format!("{}.id", self.0))
             }
             #[getter]
             fn network(&self) -> StringExpression {
-                StringExpression(format!("job.services.{}.network", self.0))
+                StringExpression(format!("{}.network", self.0))
             }
             #[getter]
             fn ports(&self) -> ObjectExpression {
-                ObjectExpression(format!("job.services.{}.ports", self.0))
+                ObjectExpression(format!("{}.ports", self.0))
             }
         }
 
@@ -931,7 +1008,7 @@ mod lupo {
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> JobServicesIdContext {
-                JobServicesIdContext(key)
+                JobServicesIdContext(ObjectExpression::format_access("job.services", &key))
             }
         }
 
@@ -972,7 +1049,7 @@ mod lupo {
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
-                StringExpression(format!("{}.{}", self.0, key))
+                StringExpression(ObjectExpression::format_access(&self.0, &key))
             }
         }
 
@@ -982,15 +1059,15 @@ mod lupo {
         impl JobsJobIdContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression(format!("jobs.{}", self.0))
+                ObjectExpression(self.0.clone())
             }
             #[getter]
             fn result(&self) -> StringExpression {
-                StringExpression(format!("jobs.{}.result", self.0))
+                StringExpression(format!("{}.result", self.0))
             }
             #[getter]
             fn outputs(&self) -> JobsJobIdOutputsContext {
-                JobsJobIdOutputsContext(format!("jobs.{}.outputs", self.0))
+                JobsJobIdOutputsContext(format!("{}.outputs", self.0))
             }
         }
 
@@ -1005,7 +1082,7 @@ mod lupo {
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> JobsJobIdContext {
-                JobsJobIdContext(key)
+                JobsJobIdContext(ObjectExpression::format_access("jobs", &key))
             }
         }
 
@@ -1020,7 +1097,7 @@ mod lupo {
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
-                StringExpression(format!("{}.{}", self.0, key))
+                StringExpression(ObjectExpression::format_access(&self.0, &key))
             }
         }
 
@@ -1030,19 +1107,19 @@ mod lupo {
         impl StepsStepIdContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression(format!("steps.{}", self.0))
+                ObjectExpression(self.0.clone())
             }
             #[getter]
             fn outputs(&self) -> StepsStepIdOutputsContext {
-                StepsStepIdOutputsContext(format!("steps.{}.outputs", self.0))
+                StepsStepIdOutputsContext(format!("{}.outputs", self.0))
             }
             #[getter]
             fn conclusion(&self) -> StringExpression {
-                StringExpression(format!("steps.{}.conclusion", self.0))
+                StringExpression(format!("{}.conclusion", self.0))
             }
             #[getter]
             fn outcome(&self) -> StringExpression {
-                StringExpression(format!("steps.{}.outcome", self.0))
+                StringExpression(format!("{}.outcome", self.0))
             }
         }
 
@@ -1057,7 +1134,7 @@ mod lupo {
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StepsStepIdContext {
-                StepsStepIdContext(key)
+                StepsStepIdContext(ObjectExpression::format_access("steps", &key))
             }
         }
 
@@ -1114,7 +1191,7 @@ mod lupo {
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
-                StringExpression(format!("secrets.{key}"))
+                StringExpression(ObjectExpression::format_access("secrets", &key))
             }
         }
 
@@ -1155,7 +1232,7 @@ mod lupo {
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
-                StringExpression(format!("matrix.{key}"))
+                StringExpression(ObjectExpression::format_access("matrix", &key))
             }
         }
 
@@ -1170,7 +1247,7 @@ mod lupo {
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
-                StringExpression(format!("{}.{}", self.0, key))
+                StringExpression(ObjectExpression::format_access(&self.0, &key))
             }
         }
 
@@ -1180,15 +1257,15 @@ mod lupo {
         impl NeedsJobIdContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression(format!("needs.{}", self.0))
+                ObjectExpression(self.0.clone())
             }
             #[getter]
             fn outputs(&self) -> NeedsJobIdOutputsContext {
-                NeedsJobIdOutputsContext(format!("needs.{}.outputs", self.0))
+                NeedsJobIdOutputsContext(format!("{}.outputs", self.0))
             }
             #[getter]
             fn result(&self) -> StringExpression {
-                StringExpression(format!("needs.{}.result", self.0))
+                StringExpression(format!("{}.result", self.0))
             }
         }
 
@@ -1203,7 +1280,7 @@ mod lupo {
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> NeedsJobIdContext {
-                NeedsJobIdContext(key)
+                NeedsJobIdContext(ObjectExpression::format_access("needs", &key))
             }
         }
 
@@ -1218,68 +1295,44 @@ mod lupo {
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> ObjectExpression {
-                ObjectExpression(format!("inputs.{key}"))
+                ObjectExpression(ObjectExpression::format_access("inputs", &key))
             }
         }
 
-        #[pyclass]
+        #[pyclass(name = "context")]
         pub struct Context;
+        #[allow(non_upper_case_globals)]
         #[pymethods]
         impl Context {
-            #[getter]
-            fn github(&self) -> GithubContext {
-                GithubContext
-            }
-            #[getter]
-            fn env(&self) -> EnvContext {
-                EnvContext
-            }
-            #[getter]
-            fn vars(&self) -> VarsContext {
-                VarsContext
-            }
-            #[getter]
-            fn job(&self) -> JobContext {
-                JobContext
-            }
-            #[getter]
-            fn jobs(&self) -> JobsContext {
-                JobsContext
-            }
-            #[getter]
-            fn steps(&self) -> StepsContext {
-                StepsContext
-            }
-            #[getter]
-            fn runner(&self) -> RunnerContext {
-                RunnerContext
-            }
-            #[getter]
-            fn secrets(&self) -> SecretsContext {
-                SecretsContext
-            }
-            #[getter]
-            fn strategy(&self) -> StrategyContext {
-                StrategyContext
-            }
-            #[getter]
-            fn matrix(&self) -> MatrixContext {
-                MatrixContext
-            }
-            #[getter]
-            fn needs(&self) -> NeedsContext {
-                NeedsContext
-            }
-            #[getter]
-            fn inputs(&self) -> InputsContext {
-                InputsContext
-            }
+            #[classattr]
+            const github: GithubContext = GithubContext;
+            #[classattr]
+            const env: EnvContext = EnvContext;
+            #[classattr]
+            const vars: VarsContext = VarsContext;
+            #[classattr]
+            const job: JobContext = JobContext;
+            #[classattr]
+            const jobs: JobsContext = JobsContext;
+            #[classattr]
+            const steps: StepsContext = StepsContext;
+            #[classattr]
+            const runner: RunnerContext = RunnerContext;
+            #[classattr]
+            const secrets: SecretsContext = SecretsContext;
+            #[classattr]
+            const strategy: StrategyContext = StrategyContext;
+            #[classattr]
+            const matrix: MatrixContext = MatrixContext;
+            #[classattr]
+            const needs: NeedsContext = NeedsContext;
+            #[classattr]
+            const inputs: InputsContext = InputsContext;
         }
 
         // TODO: Does toJSON return a string?
 
-        #[pyfunction]
-        fn lit_str(s: String) -> StringExpression {
+        fn escape_string(s: &str) -> String {
             let mut out = String::with_capacity(s.len() + 2);
             out.push('\'');
             for ch in s.chars() {
@@ -1289,7 +1342,21 @@ mod lupo {
                 out.push(ch);
             }
             out.push('\'');
-            StringExpression(out)
+            out
+        }
+
+        fn validate_string(s: &str) -> bool {
+            let mut chars = s.chars();
+            match chars.next() {
+                Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+                _ => return false,
+            }
+            chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        }
+
+        #[pyfunction]
+        fn lit_str(s: String) -> StringExpression {
+            StringExpression(escape_string(&s))
         }
 
         #[pyfunction]
@@ -1424,7 +1491,7 @@ mod lupo {
 
     #[derive(Clone)]
     struct StepOptions {
-        condition: Option<StringLike>,
+        condition: Option<Either<BooleanExpression, String>>,
         working_directory: Option<StringLike>,
         shell: Option<String>,
         id: Option<String>,
@@ -1461,7 +1528,7 @@ mod lupo {
     fn script(
         name: StringLike,
         script: StringLike,
-        condition: Option<StringLike>,
+        condition: Option<Either<BooleanExpression, String>>,
         working_directory: Option<StringLike>,
         shell: Option<String>,
         id: Option<String>,
@@ -1490,7 +1557,7 @@ mod lupo {
         with_opts: Option<Hash>,
         args: Option<StringLike>,
         entrypoint: Option<StringLike>,
-        condition: Option<StringLike>,
+        condition: Option<Either<BooleanExpression, String>>,
         working_directory: Option<StringLike>,
         shell: Option<String>,
         id: Option<String>,
@@ -1537,7 +1604,7 @@ mod lupo {
         with_opts: Option<Bound<PyDict>>,
         args: Option<StringLike>,
         entrypoint: Option<StringLike>,
-        condition: Option<StringLike>,
+        condition: Option<Either<BooleanExpression, String>>,
         working_directory: Option<StringLike>,
         shell: Option<String>,
         id: Option<String>,
@@ -2189,7 +2256,7 @@ mod lupo {
         name: Option<StringLike>,
         permissions: Option<Permissions>,
         needs: Option<Vec<String>>,
-        condition: Option<StringLike>,
+        condition: Option<Either<BooleanExpression, String>>,
         runs_on: Option<RunsOn>,
         snapshot: Option<String>,
         environment: Option<Environment>,
@@ -2216,7 +2283,7 @@ mod lupo {
             name: Option<StringLike>,
             permissions: Option<Permissions>,
             needs: Option<Vec<String>>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             runs_on: Option<RunsOn>,
             snapshot: Option<String>,
             environment: Option<Environment>,
@@ -2851,6 +2918,7 @@ mod lupo {
         unassigned: bool,
         labeled: bool,
         unlabeled: bool,
+        opened: bool,
         edited: bool,
         closed: bool,
         reopened: bool,
@@ -2875,7 +2943,7 @@ mod lupo {
     #[pymethods]
     impl PullRequestEvent {
         #[new]
-        #[pyo3(signature = (*, branches=None, branches_ignore=None, paths=None, paths_ignore=None, assigned=false, unassigned=false, labeled=false, unlabeled=false, edited=false, closed=false, reopened=false, synchronize=false, converted_to_draft=false, locked=false, unlocked=false, enqueued=false, dequeued=false, milestoned=false, demilestoned=false, ready_for_review=false, review_requested=false, review_request_removed=false, auto_merge_enabled=false, auto_merge_disabled=false))]
+        #[pyo3(signature = (*, branches=None, branches_ignore=None, paths=None, paths_ignore=None, assigned=false, unassigned=false, labeled=false, unlabeled=false, opened=false, edited=false, closed=false, reopened=false, synchronize=false, converted_to_draft=false, locked=false, unlocked=false, enqueued=false, dequeued=false, milestoned=false, demilestoned=false, ready_for_review=false, review_requested=false, review_request_removed=false, auto_merge_enabled=false, auto_merge_disabled=false))]
         fn new(
             branches: Option<Vec<String>>,
             branches_ignore: Option<Vec<String>>,
@@ -2885,6 +2953,7 @@ mod lupo {
             unassigned: bool,
             labeled: bool,
             unlabeled: bool,
+            opened: bool,
             edited: bool,
             closed: bool,
             reopened: bool,
@@ -2915,6 +2984,7 @@ mod lupo {
                 unassigned,
                 labeled,
                 unlabeled,
+                opened,
                 edited,
                 closed,
                 reopened,
@@ -2949,6 +3019,7 @@ mod lupo {
                 || self.unassigned
                 || self.labeled
                 || self.unlabeled
+                || self.opened
                 || self.edited
                 || self.closed
                 || self.reopened
@@ -2971,6 +3042,7 @@ mod lupo {
                 arr.push_yaml_cond("unassigned", self.unassigned);
                 arr.push_yaml_cond("labeled", self.labeled);
                 arr.push_yaml_cond("unlabeled", self.unlabeled);
+                arr.push_yaml_cond("opened", self.opened);
                 arr.push_yaml_cond("edited", self.edited);
                 arr.push_yaml_cond("closed", self.closed);
                 arr.push_yaml_cond("reopened", self.reopened);
@@ -4576,7 +4648,7 @@ mod lupo {
 
             args: Option<StringLike>,
             entrypoint: Option<StringLike>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             working_directory: Option<StringLike>,
             shell: Option<String>,
             id: Option<String>,
@@ -4655,7 +4727,7 @@ mod lupo {
 
             args: Option<StringLike>,
             entrypoint: Option<StringLike>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             working_directory: Option<StringLike>,
             shell: Option<String>,
             id: Option<String>,
@@ -4726,7 +4798,7 @@ mod lupo {
 
             args: Option<StringLike>,
             entrypoint: Option<StringLike>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             working_directory: Option<StringLike>,
             shell: Option<String>,
             id: Option<String>,
@@ -4793,7 +4865,7 @@ mod lupo {
 
             args: Option<StringLike>,
             entrypoint: Option<StringLike>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             working_directory: Option<StringLike>,
             shell: Option<String>,
             id: Option<String>,
@@ -4860,7 +4932,7 @@ mod lupo {
 
             args: Option<StringLike>,
             entrypoint: Option<StringLike>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             working_directory: Option<StringLike>,
             shell: Option<String>,
             id: Option<String>,
@@ -4927,7 +4999,7 @@ mod lupo {
 
             args: Option<StringLike>,
             entrypoint: Option<StringLike>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             working_directory: Option<StringLike>,
             shell: Option<String>,
             id: Option<String>,
@@ -5030,7 +5102,7 @@ mod lupo {
 
             args: Option<StringLike>,
             entrypoint: Option<StringLike>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             working_directory: Option<StringLike>,
             shell: Option<String>,
             id: Option<String>,
@@ -5121,7 +5193,7 @@ mod lupo {
 
             args: Option<StringLike>,
             entrypoint: Option<StringLike>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             working_directory: Option<StringLike>,
             shell: Option<String>,
             id: Option<String>,
@@ -5194,7 +5266,7 @@ mod lupo {
 
             args: Option<StringLike>,
             entrypoint: Option<StringLike>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             working_directory: Option<StringLike>,
             shell: Option<String>,
             id: Option<String>,
@@ -5271,7 +5343,7 @@ mod lupo {
 
             args: Option<StringLike>,
             entrypoint: Option<StringLike>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             working_directory: Option<StringLike>,
             shell: Option<String>,
             id: Option<String>,
@@ -5343,7 +5415,7 @@ mod lupo {
 
             args: Option<StringLike>,
             entrypoint: Option<StringLike>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             working_directory: Option<StringLike>,
             shell: Option<String>,
             id: Option<String>,
@@ -5402,7 +5474,7 @@ mod lupo {
 
             args: Option<StringLike>,
             entrypoint: Option<StringLike>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             working_directory: Option<StringLike>,
             shell: Option<String>,
             id: Option<String>,
@@ -5502,7 +5574,7 @@ mod lupo {
 
             args: Option<StringLike>,
             entrypoint: Option<StringLike>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             working_directory: Option<StringLike>,
             shell: Option<String>,
             id: Option<String>,
@@ -5597,7 +5669,7 @@ mod lupo {
 
             args: Option<StringLike>,
             entrypoint: Option<StringLike>,
-            condition: Option<StringLike>,
+            condition: Option<Either<BooleanExpression, String>>,
             working_directory: Option<StringLike>,
             shell: Option<String>,
             id: Option<String>,

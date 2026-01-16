@@ -1,5 +1,6 @@
 from lupo import Events, Job, PullRequestEvent, PushEvent, Workflow, WorkflowDispatchEvent, action, script
 from lupo.actions import checkout
+from lupo.expressions import context
 from lupo.toolchains import install_rust_tool, setup_rust
 
 print(
@@ -20,7 +21,7 @@ print(
                         with_opts={
                             'mode': 'simulation',
                             'run': 'cargo codspeed run',
-                            'token': '${{ secrets.CODSPEED_TOKEN }}',
+                            'token': context.secrets['CODSPEED_TOKEN'],
                         },
                     ),
                 ]
