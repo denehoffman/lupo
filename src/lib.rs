@@ -377,7 +377,7 @@ mod lupo {
     use pyo3::{
         exceptions::PyValueError,
         prelude::*,
-        types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString},
+        types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple},
     };
     use yaml_rust2::{
         yaml::{Array, Hash},
@@ -385,7 +385,9 @@ mod lupo {
     };
 
     use crate::{
-        lupo::expressions::{BooleanExpression, NumberExpression, StringExpression},
+        lupo::expressions::{
+            BooleanExpression, NumberExpression, StringExpression, YamlExpression,
+        },
         Either, InsertYaml, MaybeYamlable, PushYaml, PyMap, TryArray, TryHash, TryYamlable,
         Yamlable,
     };
@@ -1231,8 +1233,8 @@ mod lupo {
             }
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
-            fn __getitem__(&self, key: String) -> StringExpression {
-                StringExpression(ObjectExpression::format_access("matrix", &key))
+            fn __getitem__(&self, key: String) -> ObjectExpression {
+                ObjectExpression(ObjectExpression::format_access("matrix", &key))
             }
         }
 
@@ -1523,11 +1525,23 @@ mod lupo {
             Yaml::Hash(entries)
         }
     }
+    fn collect_script_lines(script: Vec<StringLike>) -> StringLike {
+        let lines = script
+            .into_iter()
+            .map(|line| match line {
+                Either::A(expr) => expr.as_expression_string(),
+                Either::B(raw) => raw,
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
+        Either::B(lines)
+    }
+
     #[pyfunction]
-    #[pyo3(signature = (name, script, *, condition = None, working_directory = None, shell = None, id = None, env = None, continue_on_error = None, timeout_minutes= None))]
+    #[pyo3(signature = (name, *script, condition = None, working_directory = None, shell = None, id = None, env = None, continue_on_error = None, timeout_minutes= None))]
     fn script(
         name: StringLike,
-        script: StringLike,
+        script: &Bound<'_, PyTuple>,
         condition: Option<Either<BooleanExpression, String>>,
         working_directory: Option<StringLike>,
         shell: Option<String>,
@@ -1535,8 +1549,14 @@ mod lupo {
         env: Option<PyMap<String, StringLike>>,
         continue_on_error: Option<BoolLike>,
         timeout_minutes: Option<IntLike>,
-    ) -> Step {
-        Step {
+    ) -> PyResult<Step> {
+        let script = collect_script_lines(
+            script
+                .iter()
+                .map(|item| item.extract::<StringLike>())
+                .collect::<PyResult<Vec<StringLike>>>()?,
+        );
+        Ok(Step {
             name,
             step_action: StepAction::Run(script),
             options: StepOptions {
@@ -1548,7 +1568,7 @@ mod lupo {
                 continue_on_error,
                 timeout_minutes,
             },
-        }
+        })
     }
     fn make_action(
         name: StringLike,
@@ -1738,6 +1758,7 @@ mod lupo {
     #[pymethods]
     impl Permissions {
         #[new]
+        #[pyo3(signature= (actions=None, artifact_metadata=None, attestations=None, checks=None, contents=None, deployments=None, id_token=None, issues=None, models=None, discussions=None, packages=None, pages=None, pull_requests=None, security_events=None, statuses=None))]
         fn new(
             actions: Option<String>,
             artifact_metadata: Option<String>,
@@ -1951,7 +1972,7 @@ mod lupo {
     #[pymethods]
     impl Concurrency {
         #[new]
-        #[pyo3(signature = (group, cancel_in_progress=None))]
+        #[pyo3(signature = (group, *, cancel_in_progress=None))]
         fn new(group: StringLike, cancel_in_progress: Option<BoolLike>) -> Self {
             Self {
                 group,
@@ -2343,9 +2364,9 @@ mod lupo {
             if let Some(defaults) = &self.defaults {
                 out.insert_yaml_opt("defaults", &defaults.maybe_as_yaml());
             }
+            out.insert_yaml_opt("strategy", &self.strategy);
             out.insert_yaml("steps", &self.steps);
             out.insert_yaml_opt("timeout-minutes", &self.timeout_minutes);
-            out.insert_yaml_opt("strategy", &self.strategy);
             out.insert_yaml_opt("continue-on-error", &self.continue_on_error);
             out.insert_yaml_opt("container", &self.container);
             out.insert_yaml_opt("services", &self.services);

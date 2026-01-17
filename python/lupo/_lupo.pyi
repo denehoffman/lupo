@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from types import ModuleType
-from typing import Literal
+from typing import Literal, Any
 
 from typing_extensions import TypeAlias
 
@@ -30,8 +30,7 @@ class Step: ...
 
 def script(
     name: StringLike,
-    script: StringLike,
-    *,
+    *script: StringLike,
     condition: Oboolstr = None,
     working_directory: Ostrlike = None,
     shell: Ostr = None,
@@ -64,6 +63,7 @@ WO: TypeAlias = Literal['write', 'none'] | None
 class Permissions:
     def __init__(
         self,
+        *,
         actions: RW = None,
         artifact_metadata: RW = None,
         attestations: RW = None,
@@ -103,7 +103,7 @@ class Environment:
     def __init__(self, name: StringLike, url: Ostrlike = None) -> None: ...
 
 class Concurrency:
-    def __init__(self, group: StringLike, cancel_in_progress: Oboollike = None) -> None: ...
+    def __init__(self, group: StringLike, *, cancel_in_progress: Oboollike = None) -> None: ...
 
 class RunDefaults:
     def __init__(self, *, shell: Ostrlike = None, working_directory: Ostrlike = None) -> None: ...
@@ -114,9 +114,7 @@ class Defaults:
     ) -> None: ...
 
 class Matrix:
-    def __init__(
-        self, *, include: Sequence | None = None, exclude: Sequence | None = None, matrix: Mapping | None = None
-    ) -> None: ...
+    def __init__(self, *, include: Sequence | None = None, exclude: Sequence | None = None, **matrix: Any) -> None: ...
 
 class Strategy:
     def __init__(
