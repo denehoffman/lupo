@@ -1,20 +1,19 @@
 from __future__ import annotations
-
-from typing import TypeAlias
+from typing import Union
 
 from ..expressions import BooleanExpression, NumberExpression, StringExpression
 
-Ostr: TypeAlias = str | None
-Obool: TypeAlias = bool | None
-Oint: TypeAlias = int | None
-StringLike: TypeAlias = str | StringExpression
-BoolLike: TypeAlias = bool | BooleanExpression
-IntLike: TypeAlias = int | NumberExpression
-Ostrlike: TypeAlias = StringLike | None
-Oboolstr: TypeAlias = BooleanExpression | str | None
-Oboollike: TypeAlias = BoolLike | None
-Ointlike: TypeAlias = IntLike | None
-StringOrBoolLike: TypeAlias = StringLike | BoolLike
+Ostr = Union[str, None]
+Obool = Union[bool, None]
+Oint = Union[int, None]
+StringLike = Union[str, StringExpression]
+BoolLike = Union[bool, BooleanExpression]
+IntLike = Union[int, NumberExpression]
+Ostrlike = Union[StringLike, None]
+Oboolstr = Union[BooleanExpression, str, None]
+Oboollike = Union[BoolLike, None]
+Ointlike = Union[IntLike, None]
+StringOrBoolLike = Union[StringLike, BoolLike]
 
 __all__ = [
     'Ostr',

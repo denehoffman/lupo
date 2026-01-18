@@ -609,11 +609,11 @@ mod lupo {
                 let other = render_string_like(other);
                 BooleanExpression(format!("contains({}, {})", self, other))
             }
-            fn starts_with(&self, other: StringLike) -> BooleanExpression {
+            fn startswith(&self, other: StringLike) -> BooleanExpression {
                 let other = render_string_like(other);
                 BooleanExpression(format!("startsWith({}, {})", self, other))
             }
-            fn ends_with(&self, other: StringLike) -> BooleanExpression {
+            fn endswith(&self, other: StringLike) -> BooleanExpression {
                 let other = render_string_like(other);
                 BooleanExpression(format!("endsWith({}, {})", self, other))
             }
@@ -769,6 +769,9 @@ mod lupo {
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> ObjectExpression {
                 ObjectExpression(Self::format_access(self.stringify(), &key))
+            }
+            fn __getattr__(&self, key: String) -> ObjectExpression {
+                self.__getitem__(key)
             }
             fn __str__(&self) -> String {
                 self.as_expression_string()
@@ -954,6 +957,9 @@ mod lupo {
             fn __getitem__(&self, key: String) -> StringExpression {
                 StringExpression(ObjectExpression::format_access("env", &key))
             }
+            fn __getattr__(&self, key: String) -> StringExpression {
+                self.__getitem__(key)
+            }
         }
 
         #[pyclass]
@@ -968,6 +974,9 @@ mod lupo {
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
                 StringExpression(ObjectExpression::format_access("vars", &key))
+            }
+            fn __getattr__(&self, key: String) -> StringExpression {
+                self.__getitem__(key)
             }
         }
 
@@ -1024,6 +1033,9 @@ mod lupo {
             fn __getitem__(&self, key: String) -> JobServicesIdContext {
                 JobServicesIdContext(ObjectExpression::format_access("job.services", &key))
             }
+            fn __getattr__(&self, key: String) -> JobServicesIdContext {
+                self.__getitem__(key)
+            }
         }
 
         #[pyclass]
@@ -1065,6 +1077,9 @@ mod lupo {
             fn __getitem__(&self, key: String) -> StringExpression {
                 StringExpression(ObjectExpression::format_access(&self.0, &key))
             }
+            fn __getattr__(&self, key: String) -> StringExpression {
+                self.__getitem__(key)
+            }
         }
 
         #[pyclass]
@@ -1098,6 +1113,9 @@ mod lupo {
             fn __getitem__(&self, key: String) -> JobsJobIdContext {
                 JobsJobIdContext(ObjectExpression::format_access("jobs", &key))
             }
+            fn __getattr__(&self, key: String) -> JobsJobIdContext {
+                self.__getitem__(key)
+            }
         }
 
         #[pyclass]
@@ -1112,6 +1130,9 @@ mod lupo {
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
                 StringExpression(ObjectExpression::format_access(&self.0, &key))
+            }
+            fn __getattr__(&self, key: String) -> StringExpression {
+                self.__getitem__(key)
             }
         }
 
@@ -1149,6 +1170,9 @@ mod lupo {
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StepsStepIdContext {
                 StepsStepIdContext(ObjectExpression::format_access("steps", &key))
+            }
+            fn __getattr__(&self, key: String) -> StepsStepIdContext {
+                self.__getitem__(key)
             }
         }
 
@@ -1207,6 +1231,9 @@ mod lupo {
             fn __getitem__(&self, key: String) -> StringExpression {
                 StringExpression(ObjectExpression::format_access("secrets", &key))
             }
+            fn __getattr__(&self, key: String) -> StringExpression {
+                self.__getitem__(key)
+            }
         }
 
         #[pyclass]
@@ -1248,6 +1275,9 @@ mod lupo {
             fn __getitem__(&self, key: String) -> ObjectExpression {
                 ObjectExpression(ObjectExpression::format_access("matrix", &key))
             }
+            fn __getattr__(&self, key: String) -> ObjectExpression {
+                self.__getitem__(key)
+            }
         }
 
         #[pyclass]
@@ -1262,6 +1292,9 @@ mod lupo {
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
                 StringExpression(ObjectExpression::format_access(&self.0, &key))
+            }
+            fn __getattr__(&self, key: String) -> StringExpression {
+                self.__getitem__(key)
             }
         }
 
@@ -1296,6 +1329,9 @@ mod lupo {
             fn __getitem__(&self, key: String) -> NeedsJobIdContext {
                 NeedsJobIdContext(ObjectExpression::format_access("needs", &key))
             }
+            fn __getattr__(&self, key: String) -> NeedsJobIdContext {
+                self.__getitem__(key)
+            }
         }
 
         #[pyclass]
@@ -1310,6 +1346,9 @@ mod lupo {
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> ObjectExpression {
                 ObjectExpression(ObjectExpression::format_access("inputs", &key))
+            }
+            fn __getattr__(&self, key: String) -> ObjectExpression {
+                self.__getitem__(key)
             }
         }
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from lupo.expressions import ArrayExpression
 from lupo.actions.utils import validate_choice
 
 from typing import TYPE_CHECKING
@@ -25,7 +26,7 @@ def setup_python(
     *,
     name: Ostrlike = None,
     version: str = 'v6',
-    python_version: Ostrlike = None,
+    python_version: StringLike | ArrayExpression | None = None,
     python_version_file: Ostrlike = None,
     check_latest: Oboollike = None,
     architecture: Ostrlike = None,
