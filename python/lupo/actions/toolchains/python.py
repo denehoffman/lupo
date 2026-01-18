@@ -83,7 +83,7 @@ def setup_python(
         name,
         'actions/setup-python',
         ref=version,
-        with_opts=options,
+        with_opts=options or None,
         args=args,
         entrypoint=entrypoint,
         condition=condition,

@@ -66,7 +66,7 @@ def setup_dotnet(
         name,
         'actions/setup-dotnet',
         ref=version,
-        with_opts=options,
+        with_opts=options or None,
         args=args,
         entrypoint=entrypoint,
         condition=condition,

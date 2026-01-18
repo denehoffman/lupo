@@ -15,7 +15,7 @@ from ..types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Mapping
 
 __all__ = ['setup_mpi']
 
@@ -57,9 +57,9 @@ def setup_mpi(
 
     return action(
         name,
-        'taiki-e/install-action',
+        'mpi4py/setup-mpi',
         ref=version,
-        with_opts=options,
+        with_opts=options or None,
         args=args,
         entrypoint=entrypoint,
         condition=condition,

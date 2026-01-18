@@ -46,7 +46,7 @@ impl Yamlable for &f64 {
 }
 impl Yamlable for String {
     fn as_yaml(&self) -> Yaml {
-        if self.starts_with("${{") && self.ends_with("}}") {
+        if self.contains("${{") && self.contains("}}") {
             // prevents variables from being quoted when they might
             // evaluate as bools or numbers
             Yaml::Real(self.clone())
@@ -485,6 +485,11 @@ mod lupo {
                 let other = render_bool_like(other);
                 Self(format!("({} != {})", self, other))
             }
+            fn if_else(&self, condition: BoolLike, else_expr: BoolLike) -> BooleanExpression {
+                let condition = render_bool_like(condition);
+                let else_expr = render_bool_like(else_expr);
+                BooleanExpression(format!("({} && {} || {})", condition, self, else_expr))
+            }
             fn to_json(&self) -> ObjectExpression {
                 ObjectExpression(format!("toJSON({})", self))
             }
@@ -555,6 +560,11 @@ mod lupo {
             fn __ne__(&self, other: NumberLike) -> BooleanExpression {
                 let other = render_number_like(other);
                 BooleanExpression(format!("({} != {})", self, other))
+            }
+            fn if_else(&self, condition: BoolLike, else_expr: NumberLike) -> NumberExpression {
+                let condition = render_bool_like(condition);
+                let else_expr = render_number_like(else_expr);
+                NumberExpression(format!("({} && {} || {})", condition, self, else_expr))
             }
             fn to_json(&self) -> ObjectExpression {
                 ObjectExpression(format!("toJSON({})", self))
@@ -650,6 +660,11 @@ mod lupo {
                 } else {
                     StringExpression(format!("hashFiles({})", self))
                 }
+            }
+            fn if_else(&self, condition: BoolLike, else_expr: StringLike) -> StringExpression {
+                let condition = render_bool_like(condition);
+                let else_expr = render_string_like(else_expr);
+                StringExpression(format!("({} && {} || {})", condition, self, else_expr))
             }
             fn __str__(&self) -> String {
                 self.as_expression_string()

@@ -85,7 +85,7 @@ def setup_java(
         name,
         'actions/setup-java',
         ref=version,
-        with_opts=options,
+        with_opts=options or None,
         args=args,
         entrypoint=entrypoint,
         condition=condition,

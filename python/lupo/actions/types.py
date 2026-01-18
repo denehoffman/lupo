@@ -17,15 +17,15 @@ Ointlike: TypeAlias = IntLike | None
 StringOrBoolLike: TypeAlias = StringLike | BoolLike
 
 __all__ = [
-    "Ostr",
-    "Obool",
-    "Oint",
-    "StringLike",
-    "BoolLike",
-    "IntLike",
-    "Ostrlike",
-    "Oboolstr",
-    "Oboollike",
-    "Ointlike",
-    "StringOrBoolLike",
+    'Ostr',
+    'Obool',
+    'Oint',
+    'StringLike',
+    'BoolLike',
+    'IntLike',
+    'Ostrlike',
+    'Oboolstr',
+    'Oboollike',
+    'Ointlike',
+    'StringOrBoolLike',
 ]

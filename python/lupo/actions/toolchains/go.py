@@ -58,7 +58,7 @@ def setup_go(
         name,
         'actions/setup-go',
         ref=version,
-        with_opts=options,
+        with_opts=options or None,
         args=args,
         entrypoint=entrypoint,
         condition=condition,

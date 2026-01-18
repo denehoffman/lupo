@@ -14,6 +14,9 @@ class BooleanExpression:
     def __or__(self, other: BoolLike) -> BooleanExpression: ...
     def __eq__(self, other: BoolLike) -> BooleanExpression: ...  # ty:ignore[invalid-method-override]
     def __ne__(self, other: BoolLike) -> BooleanExpression: ...  # ty:ignore[invalid-method-override]
+    def if_else(
+        self, condition: BoolLike, else_expr: BoolLike
+    ) -> BooleanExpression: ...
     def to_json(self) -> ObjectExpression: ...
 
 class NumberExpression:
@@ -26,6 +29,9 @@ class NumberExpression:
     def __ge__(self, other: NumberLike) -> BooleanExpression: ...
     def __eq__(self, other: NumberLike) -> BooleanExpression: ...  # ty:ignore[invalid-method-override]
     def __ne__(self, other: NumberLike) -> BooleanExpression: ...  # ty:ignore[invalid-method-override]
+    def if_else(
+        self, condition: BoolLike, else_expr: NumberLike
+    ) -> NumberExpression: ...
     def to_json(self) -> ObjectExpression: ...
 
 class StringExpression:
@@ -46,6 +52,9 @@ class StringExpression:
     def from_json_to_obj(self) -> ObjectExpression: ...
     def hash_files(
         self, others: Sequence[StringLike] | None = None
+    ) -> StringExpression: ...
+    def if_else(
+        self, condition: BoolLike, else_expr: StringLike
     ) -> StringExpression: ...
 
 class ArrayExpression:
