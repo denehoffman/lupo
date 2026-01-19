@@ -23,16 +23,52 @@ from yamloom import (
 class Target:
     runner: str
     target: str
+    skip_python_versions: list[str] | None = None
 
 
-def create_build_job(
-    job_name: str, name: str, targets: list[Target], python_versions: list[str]
-) -> Job:
+DEFAULT_PYTHON_VERSIONS = [
+    '3.9',
+    '3.10',
+    '3.11',
+    '3.12',
+    '3.13',
+    '3.13t',
+    '3.14',
+    '3.14t',
+    'pypy3.11',
+]
+
+
+def resolve_python_versions(skip: list[str] | None) -> list[str]:
+    if not skip:
+        return DEFAULT_PYTHON_VERSIONS
+    skipped = set(skip)
+    return [version for version in DEFAULT_PYTHON_VERSIONS if version not in skipped]
+
+
+def create_build_job(job_name: str, name: str, targets: list[Target]) -> Job:
+    def platform_entry(target: Target) -> dict[str, object]:
+        entry = {
+            'runner': target.runner,
+            'target': target.target,
+            'python_versions': resolve_python_versions(target.skip_python_versions),
+        }
+        python_arch = (
+            ('arm64' if target.target == 'aarch64' else target.target)
+            if name == 'windows'
+            else None
+        )
+        if python_arch is not None:
+            entry['python_arch'] = python_arch
+        return entry
+
     return Job(
         [
             checkout(),
             setup_python(
-                python_version='\n'.join(python_versions),
+                python_version=context.matrix.platform.python_versions.as_array().join(
+                    '\\n'
+                ),
                 architecture=context.matrix.platform.python_arch.as_str()
                 if name == 'windows'
                 else None,
@@ -40,7 +76,7 @@ def create_build_job(
             maturin(
                 name='Build wheels',
                 target=context.matrix.platform.target.as_str(),
-                args=f'--release --out dist --interpreter {" ".join(python_versions)}',
+                args=f'--release --out dist --interpreter {context.matrix.platform.python_versions.as_array().join(" ")}',
                 sccache=~context.github.ref.startswith('refs/tags/'),
                 manylinux='musllinux_1_2' if name == 'musllinux' else None,
             ),
@@ -53,18 +89,7 @@ def create_build_job(
         strategy=Strategy(
             fast_fail=False,
             matrix=Matrix(
-                platform=[
-                    {
-                        'runner': target.runner,
-                        'target': target.target,
-                        'python_arch': (
-                            ('arm64' if target.target == 'aarch64' else target.target)
-                            if name == 'windows'
-                            else None
-                        ),
-                    }
-                    for target in targets
-                ],
+                platform=[platform_entry(target) for target in targets],
             ),
         ),
     )
@@ -83,7 +108,10 @@ release_workflow = Workflow(
             'Build Linux Wheels',
             'linux',
             [
-                Target('ubuntu-22.04', target)
+                Target(
+                    'ubuntu-22.04',
+                    target,
+                )
                 for target in [
                     'x86_64',
                     'x86',
@@ -93,23 +121,15 @@ release_workflow = Workflow(
                     'ppc64le',
                 ]
             ],
-            [
-                '3.9',
-                '3.10',
-                '3.11',
-                '3.12',
-                '3.13',
-                '3.13t',
-                '3.14',
-                '3.14t',
-                'pypy3.11',
-            ],
         ),
         'musllinux': create_build_job(
             'Build (musl) Linux Wheels',
             'musllinux',
             [
-                Target('ubuntu-22.04', target)
+                Target(
+                    'ubuntu-22.04',
+                    target,
+                )
                 for target in [
                     'x86_64',
                     'x86',
@@ -117,55 +137,42 @@ release_workflow = Workflow(
                     'armv7',
                 ]
             ],
-            [
-                '3.9',
-                '3.10',
-                '3.11',
-                '3.12',
-                '3.13',
-                '3.13t',
-                '3.14',
-                '3.14t',
-                'pypy3.11',
-            ],
         ),
         'windows': create_build_job(
             'Build Windows Wheels',
             'windows',
             [
-                Target('windows-latest', 'x64'),
-                Target('windows-latest', 'x86'),
-                Target('windows-11-arm', 'aarch64'),
-            ],
-            [
-                '3.9',
-                '3.10',
-                '3.11',
-                '3.12',
-                '3.13',
-                '3.13t',
-                '3.14',
-                '3.14t',
-                'pypy3.11',
+                Target(
+                    'windows-latest',
+                    'x64',
+                ),
+                Target(
+                    'windows-latest',
+                    'x86',
+                ),
+                Target(
+                    'windows-11-arm',
+                    'aarch64',
+                    [
+                        '3.9',
+                        '3.10',
+                        '3.11',
+                    ],
+                ),
             ],
         ),
         'macos': create_build_job(
             'Build macOS Wheels',
             'macos',
             [
-                Target('macos-15-intel', 'x86_64'),
-                Target('macos-latest', 'aarch64'),
-            ],
-            [
-                '3.9',
-                '3.10',
-                '3.11',
-                '3.12',
-                '3.13',
-                '3.13t',
-                '3.14',
-                '3.14t',
-                'pypy3.11',
+                Target(
+                    'macos-15-intel',
+                    'x86_64',
+                ),
+                Target(
+                    'macos-latest',
+                    'aarch64',
+                ),
             ],
         ),
         'sdist': Job(
