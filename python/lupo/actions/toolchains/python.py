@@ -26,7 +26,7 @@ def setup_python(
     *,
     name: Ostrlike = None,
     version: str = 'v6',
-    python_version: StringLike | ArrayExpression | None = None,
+    python_version: StringLike | None = None,
     python_version_file: Ostrlike = None,
     check_latest: Oboollike = None,
     architecture: Ostrlike = None,
