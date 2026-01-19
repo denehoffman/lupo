@@ -80,7 +80,9 @@ def create_build_job(job_name: str, name: str, targets: list[Target]) -> Job:
                 target=context.matrix.platform.target.as_str(),
                 args=f'--release --out dist --interpreter {context.matrix.platform.python_versions.as_array().join(" ")}',
                 sccache=~context.github.ref.startswith('refs/tags/'),
-                manylinux='musllinux_1_2' if name == 'musllinux' else None,
+                manylinux='musllinux_1_2'
+                if name == 'musllinux'
+                else ('auto' if name == 'linux' else None),
             ),
             upload_artifact(
                 path='dist',
@@ -148,10 +150,7 @@ release_workflow = Workflow(
                     'windows-latest',
                     'x64',
                 ),
-                Target(
-                    'windows-latest',
-                    'x86',
-                ),
+                Target('windows-latest', 'x86', ['pypy3.11']),
                 Target(
                     'windows-11-arm',
                     'aarch64',

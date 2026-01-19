@@ -101,6 +101,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
+          manylinux: auto
           target: ${{ matrix.platform.target }}
           sccache: ${{ !(startsWith(github.ref, 'refs/tags/')) }}
           args: --release --out dist --interpreter ${{ join(matrix.platform.python_versions, ' ') }}
@@ -213,7 +214,6 @@ jobs:
               - 3.13t
               - "3.14"
               - 3.14t
-              - pypy3.11
             python_arch: x86
           - runner: windows-11-arm
             target: aarch64
