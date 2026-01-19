@@ -1,5 +1,4 @@
 from __future__ import annotations
-from lupo.expressions import ArrayExpression
 from lupo.actions.utils import validate_choice
 
 from typing import TYPE_CHECKING
