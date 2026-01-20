@@ -14,6 +14,8 @@ jobs:
   build-test-check:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -335,6 +337,8 @@ jobs:
           name: wheels-macos-${{ matrix.platform.target }}
   sdist:
     name: Build Source Distribution
+    needs:
+      - build-test-check
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout Repository

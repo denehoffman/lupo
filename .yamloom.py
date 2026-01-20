@@ -117,6 +117,7 @@ release_workflow = Workflow(
     jobs={
         'build-test-check': Job(
             [
+                checkout(),
                 setup_rust(components=['clippy']),
                 setup_uv(python_version='3.9'),
                 script('Check Rust', 'cargo clippy'),
@@ -209,6 +210,7 @@ release_workflow = Workflow(
             ],
             name='Build Source Distribution',
             runs_on='ubuntu-22.04',
+            needs=['build-test-check'],
         ),
         'release': Job(
             [
