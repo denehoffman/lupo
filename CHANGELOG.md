@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.1](https://github.com/denehoffman/yamloom/compare/v0.1.0...v0.1.1) (2026-01-20)
+
+
+### Bug Fixes
+
+* Add README+LICENSE, make yamloom entrypoint, update escape handling to only activate on Reals, add test step to workflow, remove hook for yamloom, use list instead of Sequence for type hints ([4cf29f7](https://github.com/denehoffman/yamloom/commit/4cf29f7afd55565fb84b6d5e7b69fec077a13302))
+
+
+### Miscellaneous Chores
+
+* Trigger release ([86c7264](https://github.com/denehoffman/yamloom/commit/86c7264d0b7dc575337625f0d68e421033f60011))
+
 ## 0.1.0 (2026-01-19)
 
 
