@@ -15,6 +15,6 @@ check:
     uvx ruff format --check
 
 fix:
-    cargo clippy --fix
+    cargo clippy --fix --allow-dirty
     uvx ruff check --fix
     uvx ruff format
