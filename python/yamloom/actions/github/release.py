@@ -156,7 +156,7 @@ def release_please(
 
     return action(
         name,
-        'googlapis/release-please-action',
+        'googleapis/release-please-action',
         ref=version,
         with_opts=options or None,
         args=args,
