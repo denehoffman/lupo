@@ -16,7 +16,7 @@ from ..types import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-__all__ = ['maturin']
+__all__ = ['maturin', 'pypi_publish']
 
 
 def maturin(
@@ -70,6 +70,63 @@ def maturin(
     return action(
         name,
         'PyO3/maturin-action',
+        ref=version,
+        with_opts=options or None,
+        args=args,
+        entrypoint=entrypoint,
+        condition=condition,
+        working_directory=working_directory,
+        shell=shell,
+        id=id,
+        env=env,
+        continue_on_error=continue_on_error,
+        timeout_minutes=timeout_minutes,
+    )
+
+
+def pypi_publish(
+    *,
+    name: Ostrlike = None,
+    version: str = 'release/v1',
+    user: Ostrlike = None,
+    password: Ostrlike = None,
+    repository_url: Ostrlike = None,
+    packages_dir: Ostrlike = None,
+    verify_metadata: Oboollike = None,
+    skip_existing: Oboollike = None,
+    verbose: Oboollike = None,
+    print_hash: Oboollike = None,
+    attestations: Oboollike = None,
+    args: Ostrlike = None,
+    entrypoint: Ostrlike = None,
+    condition: Oboolstr = None,
+    working_directory: Ostrlike = None,
+    shell: Ostr = None,
+    id: Ostr = None,  # noqa: A002
+    env: Mapping[str, StringLike] | None = None,
+    continue_on_error: Oboollike = None,
+    timeout_minutes: Ointlike = None,
+) -> Step:
+    options: dict[str, object] = {
+        'user': user,
+        'password': password,
+        'repository-url': repository_url,
+        'packages-dir': packages_dir,
+        'verify-metadata': verify_metadata,
+        'skip-existing': skip_existing,
+        'verbose': verbose,
+        'print-hash': print_hash,
+        'attestations': attestations,
+    }
+
+    options = {key: value for key, value in options.items() if value is not None}
+
+    if name is None:
+        name = 'Publish to PyPI'
+
+    return action(
+        name,
+        'pypa/gh-action-pypi-publish',
         ref=version,
         with_opts=options or None,
         args=args,
