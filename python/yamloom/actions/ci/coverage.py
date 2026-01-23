@@ -23,7 +23,6 @@ __all__ = ['codecov']
 
 def codecov(
     *,
-    path: StringLike,
     name: Ostrlike = None,
     version: str = 'v5',
     base_sha: Ostrlike = None,
