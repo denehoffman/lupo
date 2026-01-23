@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.3](https://github.com/denehoffman/yamloom/compare/yamloom-v0.2.2...yamloom-v0.2.3) (2026-01-23)
+
+
+### Bug Fixes
+
+* **ci/coverage:** Remove unused path argument ([f37b09e](https://github.com/denehoffman/yamloom/commit/f37b09ed45123e78e82d2c296a9004ebbb328f3c))
+* **ci:** Add __init__.py so coverage subpackage is discoverable ([40dcc08](https://github.com/denehoffman/yamloom/commit/40dcc087ae5741b387c815751a8b7191df60b4a0))
+
 ## [0.2.2](https://github.com/denehoffman/yamloom/compare/yamloom-v0.2.1...yamloom-v0.2.2) (2026-01-22)
 
 
