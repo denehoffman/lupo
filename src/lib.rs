@@ -3,7 +3,7 @@
 
 use std::{
     fmt::Display,
-    fs::{create_dir_all, OpenOptions},
+    fs::{OpenOptions, create_dir_all},
     io::Write,
     path::Path,
 };
@@ -15,8 +15,8 @@ use pyo3::{
     types::{PyDict, PyDictMethods},
 };
 use yaml_rust2::{
-    yaml::{Array, Hash},
     Yaml, YamlEmitter,
+    yaml::{Array, Hash},
 };
 
 pub trait Yamlable {
@@ -34,9 +34,10 @@ pub trait Yamlable {
     fn write_to_file(&self, path: impl AsRef<Path>, overwrite: bool) -> PyResult<()> {
         let path = path.as_ref();
         if let Some(parent) = path.parent()
-            && !parent.as_os_str().is_empty() {
-                create_dir_all(parent)?;
-            }
+            && !parent.as_os_str().is_empty()
+        {
+            create_dir_all(parent)?;
+        }
         let mut opts = OpenOptions::new();
         opts.write(true).create(true);
         if overwrite {
@@ -433,21 +434,28 @@ mod yamloom {
         types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple},
     };
     use yaml_rust2::{
-        yaml::{Array, Hash},
         Yaml,
+        yaml::{Array, Hash},
     };
 
     use crate::{
-        yamloom::expressions::{
-            BooleanExpression, NumberExpression, StringExpression, YamlExpression,
-        },
         Either, InsertYaml, MaybeYamlable, PushYaml, PyMap, TryArray, TryHash, TryYamlable,
         Yamlable,
+        yamloom::expressions::{
+            Allowed, ArrayExpression, BooleanExpression, Contexts, Funcs, NumberExpression,
+            ObjectExpression, StringExpression, YamlExpression,
+        },
     };
 
     #[pymodule]
     mod expressions {
-        use pyo3::types::{PyFloat, PyInt};
+        use std::marker::PhantomData;
+
+        use bitflags::bitflags;
+        use pyo3::{
+            exceptions::PyRuntimeError,
+            types::{PyFloat, PyInt},
+        };
 
         use crate::push_escaped_control;
 
@@ -457,30 +465,270 @@ mod yamloom {
         type BoolLike = Either<BooleanExpression, bool>;
         type NumberLike = Either<NumberExpression, f64>;
 
-        fn render_string_like(value: StringLike) -> String {
-            match value {
-                Either::A(expr) => expr.to_string(),
-                Either::B(raw) => escape_string(&raw),
+        bitflags! {
+            #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub(super) struct Contexts: u32 {
+                const NONE = 0;
+                const GITHUB = 1 << 0;
+                const SECRETS = 1 << 1;
+                const ENV = 1 << 2;
+                const VARS = 1 << 3;
+                const INPUTS = 1 << 4;
+                const NEEDS = 1 << 5;
+                const STRATEGY = 1 << 6;
+                const MATRIX = 1 << 7;
+                const JOB = 1 << 8;
+                const RUNNER = 1 << 9;
+                const STEPS = 1 << 10;
+                const JOBS = 1 << 11;
             }
         }
 
-        fn render_bool_like(value: BoolLike) -> String {
-            match value {
-                Either::A(expr) => expr.to_string(),
-                Either::B(raw) => {
-                    if raw {
-                        "true".to_string()
-                    } else {
-                        "false".to_string()
-                    }
+        bitflags! {
+            #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub(super) struct Funcs: u32 {
+                const NONE = 0;
+                const HASH_FILES = 1 << 0;
+                const ALWAYS = 1 << 1;
+                const CANCELLED = 1 << 2;
+                const SUCCESS = 1 << 3;
+                const FAILURE = 1 << 4;
+            }
+        }
+
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        struct ExprMeta {
+            contexts: Contexts,
+            funcs: Funcs,
+        }
+
+        impl ExprMeta {
+            const fn empty() -> Self {
+                Self {
+                    contexts: Contexts::NONE,
+                    funcs: Funcs::NONE,
+                }
+            }
+
+            const fn with_contexts(contexts: Contexts) -> Self {
+                Self {
+                    contexts,
+                    funcs: Funcs::NONE,
+                }
+            }
+
+            const fn with_funcs(funcs: Funcs) -> Self {
+                Self {
+                    contexts: Contexts::NONE,
+                    funcs,
+                }
+            }
+
+            fn union(self, other: Self) -> Self {
+                Self {
+                    contexts: self.contexts | other.contexts,
+                    funcs: self.funcs | other.funcs,
                 }
             }
         }
 
-        fn render_number_like(value: NumberLike) -> String {
+        #[derive(Clone)]
+        struct ExprBase {
+            text: String,
+            meta: ExprMeta,
+        }
+
+        impl ExprBase {
+            fn new(text: String, meta: ExprMeta) -> Self {
+                Self { text, meta }
+            }
+
+            fn with_contexts(text: impl Into<String>, contexts: Contexts) -> Self {
+                Self::new(text.into(), ExprMeta::with_contexts(contexts))
+            }
+        }
+
+        struct Expression<K> {
+            base: ExprBase,
+            _kind: PhantomData<K>,
+        }
+
+        impl<K> Clone for Expression<K> {
+            fn clone(&self) -> Self {
+                Self {
+                    base: self.base.clone(),
+                    _kind: PhantomData,
+                }
+            }
+        }
+
+        impl<K> Expression<K> {
+            fn new(text: String, meta: ExprMeta) -> Self {
+                Self {
+                    base: ExprBase::new(text, meta),
+                    _kind: PhantomData,
+                }
+            }
+
+            fn from_base(base: ExprBase) -> Self {
+                Self {
+                    base,
+                    _kind: PhantomData,
+                }
+            }
+
+            fn text(&self) -> &str {
+                &self.base.text
+            }
+
+            fn meta(&self) -> ExprMeta {
+                self.base.meta
+            }
+        }
+
+        struct BoolKind;
+        struct NumberKind;
+        struct StringKind;
+        struct ArrayKind;
+        struct ObjectKind;
+
+        #[derive(Clone, Copy, Debug)]
+        pub(super) struct Allowed {
+            contexts: Contexts,
+            funcs: Funcs,
+            label: &'static str,
+        }
+
+        impl Allowed {
+            pub(super) const fn new(contexts: Contexts, funcs: Funcs, label: &'static str) -> Self {
+                Self {
+                    contexts,
+                    funcs,
+                    label,
+                }
+            }
+
+            fn validate(self, meta: ExprMeta, expr: &str) -> PyResult<()> {
+                let disallowed_contexts = meta.contexts & !self.contexts;
+                let disallowed_funcs = meta.funcs & !self.funcs;
+                if disallowed_contexts.is_empty() && disallowed_funcs.is_empty() {
+                    return Ok(());
+                }
+
+                let allowed_contexts = contexts_to_names(self.contexts);
+                let allowed_funcs = funcs_to_names(self.funcs);
+                let used_contexts = contexts_to_names(disallowed_contexts);
+                let used_funcs = funcs_to_names(disallowed_funcs);
+
+                let mut message = format!(
+                    "Key '{}' does not allow the context(s) {{{}}}",
+                    self.label,
+                    used_contexts.join(", ")
+                );
+                if !used_funcs.is_empty() {
+                    message.push_str(&format!(" or function(s) {{{}}}", used_funcs.join(", ")));
+                }
+                message.push_str(&format!(
+                    " used in this expression:\n{}\n\nAllowed contexts: {{{}}}",
+                    expr,
+                    allowed_contexts.join(", ")
+                ));
+                if !self.funcs.is_empty() {
+                    message.push_str(&format!(
+                        "\nAllowed functions: {{{}}}",
+                        allowed_funcs.join(", ")
+                    ));
+                }
+                Err(PyRuntimeError::new_err(message))
+            }
+        }
+
+        fn contexts_to_names(contexts: Contexts) -> Vec<&'static str> {
+            let mut out = Vec::new();
+            if contexts.contains(Contexts::GITHUB) {
+                out.push("github");
+            }
+            if contexts.contains(Contexts::NEEDS) {
+                out.push("needs");
+            }
+            if contexts.contains(Contexts::STRATEGY) {
+                out.push("strategy");
+            }
+            if contexts.contains(Contexts::MATRIX) {
+                out.push("matrix");
+            }
+            if contexts.contains(Contexts::JOB) {
+                out.push("job");
+            }
+            if contexts.contains(Contexts::JOBS) {
+                out.push("jobs");
+            }
+            if contexts.contains(Contexts::RUNNER) {
+                out.push("runner");
+            }
+            if contexts.contains(Contexts::STEPS) {
+                out.push("steps");
+            }
+            if contexts.contains(Contexts::ENV) {
+                out.push("env");
+            }
+            if contexts.contains(Contexts::VARS) {
+                out.push("vars");
+            }
+            if contexts.contains(Contexts::SECRETS) {
+                out.push("secrets");
+            }
+            if contexts.contains(Contexts::INPUTS) {
+                out.push("inputs");
+            }
+            out
+        }
+
+        fn funcs_to_names(funcs: Funcs) -> Vec<&'static str> {
+            let mut out = Vec::new();
+            if funcs.contains(Funcs::HASH_FILES) {
+                out.push("hashFiles");
+            }
+            if funcs.contains(Funcs::ALWAYS) {
+                out.push("always");
+            }
+            if funcs.contains(Funcs::CANCELLED) {
+                out.push("cancelled");
+            }
+            if funcs.contains(Funcs::SUCCESS) {
+                out.push("success");
+            }
+            if funcs.contains(Funcs::FAILURE) {
+                out.push("failure");
+            }
+            out
+        }
+
+        fn render_string_like(value: StringLike) -> (String, ExprMeta) {
             match value {
-                Either::A(expr) => expr.to_string(),
-                Either::B(raw) => raw.to_string(),
+                Either::A(expr) => (expr.to_string(), expr.meta()),
+                Either::B(raw) => (escape_string(&raw), ExprMeta::empty()),
+            }
+        }
+
+        fn render_bool_like(value: BoolLike) -> (String, ExprMeta) {
+            match value {
+                Either::A(expr) => (expr.to_string(), expr.meta()),
+                Either::B(raw) => (
+                    if raw {
+                        "true".to_string()
+                    } else {
+                        "false".to_string()
+                    },
+                    ExprMeta::empty(),
+                ),
+            }
+        }
+
+        fn render_number_like(value: NumberLike) -> (String, ExprMeta) {
+            match value {
+                Either::A(expr) => (expr.to_string(), expr.meta()),
+                Either::B(raw) => (raw.to_string(), ExprMeta::empty()),
             }
         }
 
@@ -501,10 +749,10 @@ mod yamloom {
 
         #[pyclass]
         #[derive(Clone)]
-        pub struct BooleanExpression(String);
+        pub struct BooleanExpression(Expression<BoolKind>);
         impl YamlExpression for BooleanExpression {
             fn stringify(&self) -> &str {
-                &self.0
+                self.0.text()
             }
         }
         impl Display for BooleanExpression {
@@ -512,44 +760,76 @@ mod yamloom {
                 write!(f, "{}", self.stringify())
             }
         }
+        impl BooleanExpression {
+            fn new_expr(text: String, meta: ExprMeta) -> Self {
+                Self(Expression::new(text, meta))
+            }
+
+            fn from_base(base: ExprBase) -> Self {
+                Self(Expression::from_base(base))
+            }
+
+            fn meta(&self) -> ExprMeta {
+                self.0.meta()
+            }
+
+            pub(super) fn validate_allowed(&self, allowed: Allowed) -> PyResult<()> {
+                allowed.validate(self.meta(), &self.as_expression_string())
+            }
+        }
         #[pymethods]
         impl BooleanExpression {
             fn as_num(&self) -> NumberExpression {
-                NumberExpression(self.to_string())
+                NumberExpression::new_expr(self.to_string(), self.meta())
             }
             fn as_str(&self) -> StringExpression {
-                StringExpression(self.to_string())
+                StringExpression::new_expr(self.to_string(), self.meta())
             }
             fn as_obj(&self) -> ObjectExpression {
-                ObjectExpression(self.to_string())
+                ObjectExpression::new_expr(self.to_string(), self.meta())
             }
             fn __invert__(&self) -> Self {
-                Self(format!("!({})", self))
+                Self::new_expr(format!("!({})", self), self.meta())
             }
             fn __and__(&self, other: BoolLike) -> Self {
-                let other = render_bool_like(other);
-                Self(format!("({} && {})", self, other))
+                let (other, other_meta) = render_bool_like(other);
+                Self::new_expr(
+                    format!("({} && {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
             fn __or__(&self, other: BoolLike) -> Self {
-                let other = render_bool_like(other);
-                Self(format!("({} || {})", self, other))
+                let (other, other_meta) = render_bool_like(other);
+                Self::new_expr(
+                    format!("({} || {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
-            // TODO: if-then with && + || ? How do we define the arguments and output?
             fn __eq__(&self, other: BoolLike) -> Self {
-                let other = render_bool_like(other);
-                Self(format!("({} == {})", self, other))
+                let (other, other_meta) = render_bool_like(other);
+                Self::new_expr(
+                    format!("({} == {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
             fn __ne__(&self, other: BoolLike) -> Self {
-                let other = render_bool_like(other);
-                Self(format!("({} != {})", self, other))
+                let (other, other_meta) = render_bool_like(other);
+                Self::new_expr(
+                    format!("({} != {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
             fn if_else(&self, condition: BoolLike, else_expr: BoolLike) -> BooleanExpression {
-                let condition = render_bool_like(condition);
-                let else_expr = render_bool_like(else_expr);
-                BooleanExpression(format!("({} && {} || {})", condition, self, else_expr))
+                let (condition, condition_meta) = render_bool_like(condition);
+                let (else_expr, else_meta) = render_bool_like(else_expr);
+                let meta = self.meta().union(condition_meta).union(else_meta);
+                BooleanExpression::new_expr(
+                    format!("({} && {} || {})", condition, self, else_expr),
+                    meta,
+                )
             }
             fn to_json(&self) -> ObjectExpression {
-                ObjectExpression(format!("toJSON({})", self))
+                ObjectExpression::new_expr(format!("toJSON({})", self), self.meta())
             }
             fn __str__(&self) -> String {
                 self.as_expression_string()
@@ -557,26 +837,35 @@ mod yamloom {
         }
         #[pyfunction]
         fn success() -> BooleanExpression {
-            BooleanExpression("success()".to_string())
+            BooleanExpression::new_expr(
+                "success()".to_string(),
+                ExprMeta::with_funcs(Funcs::SUCCESS),
+            )
         }
         #[pyfunction]
         fn always() -> BooleanExpression {
-            BooleanExpression("always()".to_string())
+            BooleanExpression::new_expr("always()".to_string(), ExprMeta::with_funcs(Funcs::ALWAYS))
         }
         #[pyfunction]
         fn cancelled() -> BooleanExpression {
-            BooleanExpression("cancelled()".to_string())
+            BooleanExpression::new_expr(
+                "cancelled()".to_string(),
+                ExprMeta::with_funcs(Funcs::CANCELLED),
+            )
         }
         #[pyfunction]
         fn failure() -> BooleanExpression {
-            BooleanExpression("failure()".to_string())
+            BooleanExpression::new_expr(
+                "failure()".to_string(),
+                ExprMeta::with_funcs(Funcs::FAILURE),
+            )
         }
         #[pyclass]
         #[derive(Clone)]
-        pub struct NumberExpression(String);
+        pub struct NumberExpression(Expression<NumberKind>);
         impl YamlExpression for NumberExpression {
             fn stringify(&self) -> &str {
-                &self.0
+                self.0.text()
             }
         }
         impl Display for NumberExpression {
@@ -584,48 +873,87 @@ mod yamloom {
                 write!(f, "{}", self.stringify())
             }
         }
+        impl NumberExpression {
+            fn new_expr(text: String, meta: ExprMeta) -> Self {
+                Self(Expression::new(text, meta))
+            }
+
+            fn from_base(base: ExprBase) -> Self {
+                Self(Expression::from_base(base))
+            }
+
+            fn meta(&self) -> ExprMeta {
+                self.0.meta()
+            }
+
+            pub(super) fn validate_allowed(&self, allowed: Allowed) -> PyResult<()> {
+                allowed.validate(self.meta(), &self.as_expression_string())
+            }
+        }
         #[pymethods]
         impl NumberExpression {
             fn as_bool(&self) -> BooleanExpression {
-                BooleanExpression(self.to_string())
+                BooleanExpression::new_expr(self.to_string(), self.meta())
             }
             fn as_str(&self) -> StringExpression {
-                StringExpression(self.to_string())
+                StringExpression::new_expr(self.to_string(), self.meta())
             }
             fn as_obj(&self) -> ObjectExpression {
-                ObjectExpression(self.to_string())
+                ObjectExpression::new_expr(self.to_string(), self.meta())
             }
             fn __lt__(&self, other: NumberLike) -> BooleanExpression {
-                let other = render_number_like(other);
-                BooleanExpression(format!("({} < {})", self, other))
+                let (other, other_meta) = render_number_like(other);
+                BooleanExpression::new_expr(
+                    format!("({} < {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
             fn __le__(&self, other: NumberLike) -> BooleanExpression {
-                let other = render_number_like(other);
-                BooleanExpression(format!("({} <= {})", self, other))
+                let (other, other_meta) = render_number_like(other);
+                BooleanExpression::new_expr(
+                    format!("({} <= {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
             fn __gt__(&self, other: NumberLike) -> BooleanExpression {
-                let other = render_number_like(other);
-                BooleanExpression(format!("({} > {})", self, other))
+                let (other, other_meta) = render_number_like(other);
+                BooleanExpression::new_expr(
+                    format!("({} > {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
             fn __ge__(&self, other: NumberLike) -> BooleanExpression {
-                let other = render_number_like(other);
-                BooleanExpression(format!("({} >= {})", self, other))
+                let (other, other_meta) = render_number_like(other);
+                BooleanExpression::new_expr(
+                    format!("({} >= {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
             fn __eq__(&self, other: NumberLike) -> BooleanExpression {
-                let other = render_number_like(other);
-                BooleanExpression(format!("({} == {})", self, other))
+                let (other, other_meta) = render_number_like(other);
+                BooleanExpression::new_expr(
+                    format!("({} == {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
             fn __ne__(&self, other: NumberLike) -> BooleanExpression {
-                let other = render_number_like(other);
-                BooleanExpression(format!("({} != {})", self, other))
+                let (other, other_meta) = render_number_like(other);
+                BooleanExpression::new_expr(
+                    format!("({} != {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
             fn if_else(&self, condition: BoolLike, else_expr: NumberLike) -> NumberExpression {
-                let condition = render_bool_like(condition);
-                let else_expr = render_number_like(else_expr);
-                NumberExpression(format!("({} && {} || {})", condition, self, else_expr))
+                let (condition, condition_meta) = render_bool_like(condition);
+                let (else_expr, else_meta) = render_number_like(else_expr);
+                let meta = self.meta().union(condition_meta).union(else_meta);
+                NumberExpression::new_expr(
+                    format!("({} && {} || {})", condition, self, else_expr),
+                    meta,
+                )
             }
             fn to_json(&self) -> ObjectExpression {
-                ObjectExpression(format!("toJSON({})", self))
+                ObjectExpression::new_expr(format!("toJSON({})", self), self.meta())
             }
             fn __str__(&self) -> String {
                 self.as_expression_string()
@@ -633,10 +961,10 @@ mod yamloom {
         }
         #[pyclass]
         #[derive(Clone)]
-        pub struct StringExpression(String);
+        pub struct StringExpression(Expression<StringKind>);
         impl YamlExpression for StringExpression {
             fn stringify(&self) -> &str {
-                &self.0
+                self.0.text()
             }
         }
         impl Display for StringExpression {
@@ -644,85 +972,129 @@ mod yamloom {
                 write!(f, "{}", self.stringify())
             }
         }
+        impl StringExpression {
+            fn new_expr(text: String, meta: ExprMeta) -> Self {
+                Self(Expression::new(text, meta))
+            }
+
+            fn from_base(base: ExprBase) -> Self {
+                Self(Expression::from_base(base))
+            }
+
+            fn meta(&self) -> ExprMeta {
+                self.0.meta()
+            }
+
+            pub(super) fn validate_allowed(&self, allowed: Allowed) -> PyResult<()> {
+                allowed.validate(self.meta(), &self.as_expression_string())
+            }
+        }
         #[pymethods]
         impl StringExpression {
             fn as_bool(&self) -> BooleanExpression {
-                BooleanExpression(self.to_string())
+                BooleanExpression::new_expr(self.to_string(), self.meta())
             }
             fn as_num(&self) -> NumberExpression {
-                NumberExpression(self.to_string())
+                NumberExpression::new_expr(self.to_string(), self.meta())
             }
             fn as_obj(&self) -> ObjectExpression {
-                ObjectExpression(self.to_string())
+                ObjectExpression::new_expr(self.to_string(), self.meta())
             }
             fn __eq__(&self, other: StringLike) -> BooleanExpression {
-                let other = render_string_like(other);
-                BooleanExpression(format!("({} == {})", self, other))
+                let (other, other_meta) = render_string_like(other);
+                BooleanExpression::new_expr(
+                    format!("({} == {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
             fn __ne__(&self, other: StringLike) -> BooleanExpression {
-                let other = render_string_like(other);
-                BooleanExpression(format!("({} != {})", self, other))
+                let (other, other_meta) = render_string_like(other);
+                BooleanExpression::new_expr(
+                    format!("({} != {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
             fn contains(&self, other: StringLike) -> BooleanExpression {
-                let other = render_string_like(other);
-                BooleanExpression(format!("contains({}, {})", self, other))
+                let (other, other_meta) = render_string_like(other);
+                BooleanExpression::new_expr(
+                    format!("contains({}, {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
             fn startswith(&self, other: StringLike) -> BooleanExpression {
-                let other = render_string_like(other);
-                BooleanExpression(format!("startsWith({}, {})", self, other))
+                let (other, other_meta) = render_string_like(other);
+                BooleanExpression::new_expr(
+                    format!("startsWith({}, {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
             fn endswith(&self, other: StringLike) -> BooleanExpression {
-                let other = render_string_like(other);
-                BooleanExpression(format!("endsWith({}, {})", self, other))
+                let (other, other_meta) = render_string_like(other);
+                BooleanExpression::new_expr(
+                    format!("endsWith({}, {})", self, other),
+                    self.meta().union(other_meta),
+                )
             }
             fn format(&self, args: Vec<StringLike>) -> StringExpression {
-                StringExpression(format!(
-                    "format({}, {})",
-                    self,
-                    args.into_iter()
-                        .map(render_string_like)
-                        .collect::<Vec<String>>()
-                        .join(", ")
-                ))
+                let mut meta = self.meta();
+                let args = args
+                    .into_iter()
+                    .map(|arg| {
+                        let (text, arg_meta) = render_string_like(arg);
+                        meta = meta.union(arg_meta);
+                        text
+                    })
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                StringExpression::new_expr(format!("format({}, {})", self, args), meta)
             }
             // I don't think we need join for single strings despite the docs
             fn to_json(&self) -> ObjectExpression {
-                ObjectExpression(format!("toJSON({})", self))
+                ObjectExpression::new_expr(format!("toJSON({})", self), self.meta())
             }
             fn from_json_to_bool(&self) -> BooleanExpression {
-                BooleanExpression(format!("fromJSON({})", self))
+                BooleanExpression::new_expr(format!("fromJSON({})", self), self.meta())
             }
             fn from_json_to_num(&self) -> NumberExpression {
-                NumberExpression(format!("fromJSON({})", self))
+                NumberExpression::new_expr(format!("fromJSON({})", self), self.meta())
             }
             fn from_json_to_str(&self) -> Self {
-                Self(format!("fromJSON({})", self))
+                Self::new_expr(format!("fromJSON({})", self), self.meta())
             }
             fn from_json_to_array(&self) -> ArrayExpression {
-                ArrayExpression(format!("fromJSON({})", self))
+                ArrayExpression::new_expr(format!("fromJSON({})", self), self.meta())
             }
             fn from_json_to_obj(&self) -> ObjectExpression {
-                ObjectExpression(format!("fromJSON({})", self))
+                ObjectExpression::new_expr(format!("fromJSON({})", self), self.meta())
             }
             fn hash_files(&self, others: Option<Vec<StringLike>>) -> StringExpression {
                 if let Some(others) = others {
-                    StringExpression(format!(
-                        "hashFiles({}, {})",
-                        self,
-                        others
-                            .into_iter()
-                            .map(render_string_like)
-                            .collect::<Vec<String>>()
-                            .join(", ")
-                    ))
+                    let mut meta = self.meta().union(ExprMeta::with_funcs(Funcs::HASH_FILES));
+                    let args = others
+                        .into_iter()
+                        .map(|other| {
+                            let (text, other_meta) = render_string_like(other);
+                            meta = meta.union(other_meta);
+                            text
+                        })
+                        .collect::<Vec<String>>()
+                        .join(", ");
+                    StringExpression::new_expr(format!("hashFiles({}, {})", self, args), meta)
                 } else {
-                    StringExpression(format!("hashFiles({})", self))
+                    StringExpression::new_expr(
+                        format!("hashFiles({})", self),
+                        self.meta().union(ExprMeta::with_funcs(Funcs::HASH_FILES)),
+                    )
                 }
             }
             fn if_else(&self, condition: BoolLike, else_expr: StringLike) -> StringExpression {
-                let condition = render_bool_like(condition);
-                let else_expr = render_string_like(else_expr);
-                StringExpression(format!("({} && {} || {})", condition, self, else_expr))
+                let (condition, condition_meta) = render_bool_like(condition);
+                let (else_expr, else_meta) = render_string_like(else_expr);
+                let meta = self.meta().union(condition_meta).union(else_meta);
+                StringExpression::new_expr(
+                    format!("({} && {} || {})", condition, self, else_expr),
+                    meta,
+                )
             }
             fn __str__(&self) -> String {
                 self.as_expression_string()
@@ -737,33 +1109,52 @@ mod yamloom {
 
         #[pyclass]
         #[derive(Clone)]
-        pub struct ArrayExpression(String);
+        pub struct ArrayExpression(Expression<ArrayKind>);
         impl YamlExpression for ArrayExpression {
             fn stringify(&self) -> &str {
-                &self.0
+                self.0.text()
+            }
+        }
+        impl ArrayExpression {
+            fn new_expr(text: String, meta: ExprMeta) -> Self {
+                Self(Expression::new(text, meta))
+            }
+
+            fn meta(&self) -> ExprMeta {
+                self.0.meta()
+            }
+
+            pub(super) fn validate_allowed(&self, allowed: Allowed) -> PyResult<()> {
+                allowed.validate(self.meta(), &self.as_expression_string())
             }
         }
         #[pymethods]
         impl ArrayExpression {
             fn as_num(&self) -> NumberExpression {
-                NumberExpression(self.to_string())
+                NumberExpression::new_expr(self.to_string(), self.meta())
             }
             fn as_obj(&self) -> ObjectExpression {
-                ObjectExpression(self.to_string())
+                ObjectExpression::new_expr(self.to_string(), self.meta())
             }
             fn contains(&self, other: ObjectExpression) -> BooleanExpression {
-                BooleanExpression(format!("contains({}, {})", self, other.stringify()))
+                BooleanExpression::new_expr(
+                    format!("contains({}, {})", self, other.stringify()),
+                    self.meta().union(other.meta()),
+                )
             }
             fn join(&self, separator: Option<StringLike>) -> StringExpression {
                 if let Some(sep) = separator {
-                    let sep = render_string_like(sep);
-                    StringExpression(format!("join({}, {})", self, sep))
+                    let (sep, sep_meta) = render_string_like(sep);
+                    StringExpression::new_expr(
+                        format!("join({}, {})", self, sep),
+                        self.meta().union(sep_meta),
+                    )
                 } else {
-                    StringExpression(format!("join({})", self))
+                    StringExpression::new_expr(format!("join({})", self), self.meta())
                 }
             }
             fn to_json(&self) -> ObjectExpression {
-                ObjectExpression(format!("toJSON({})", self))
+                ObjectExpression::new_expr(format!("toJSON({})", self), self.meta())
             }
             fn __str__(&self) -> String {
                 self.as_expression_string()
@@ -771,10 +1162,10 @@ mod yamloom {
         }
         #[pyclass]
         #[derive(Clone)]
-        pub struct ObjectExpression(String);
+        pub struct ObjectExpression(Expression<ObjectKind>);
         impl YamlExpression for ObjectExpression {
             fn stringify(&self) -> &str {
-                &self.0
+                self.0.text()
             }
         }
         impl Display for ObjectExpression {
@@ -791,42 +1182,59 @@ mod yamloom {
                 }
             }
         }
+        impl ObjectExpression {
+            fn new_expr(text: String, meta: ExprMeta) -> Self {
+                Self(Expression::new(text, meta))
+            }
+
+            fn from_base(base: ExprBase) -> Self {
+                Self(Expression::from_base(base))
+            }
+
+            fn meta(&self) -> ExprMeta {
+                self.0.meta()
+            }
+
+            pub(super) fn validate_allowed(&self, allowed: Allowed) -> PyResult<()> {
+                allowed.validate(self.meta(), &self.as_expression_string())
+            }
+        }
         #[pymethods]
         impl ObjectExpression {
             fn as_num(&self) -> NumberExpression {
-                NumberExpression(self.stringify().to_string())
+                NumberExpression::new_expr(self.stringify().to_string(), self.meta())
             }
             fn as_str(&self) -> StringExpression {
-                StringExpression(self.stringify().to_string())
+                StringExpression::new_expr(self.stringify().to_string(), self.meta())
             }
             fn as_bool(&self) -> BooleanExpression {
-                BooleanExpression(self.stringify().to_string())
+                BooleanExpression::new_expr(self.stringify().to_string(), self.meta())
             }
             fn as_array(&self) -> ArrayExpression {
-                ArrayExpression(self.stringify().to_string())
+                ArrayExpression::new_expr(self.stringify().to_string(), self.meta())
             }
             fn to_json(&self) -> ObjectExpression {
-                ObjectExpression(format!("toJSON({})", self.stringify()))
+                ObjectExpression::new_expr(format!("toJSON({})", self.stringify()), self.meta())
             }
             fn from_json_to_bool(&self) -> BooleanExpression {
-                BooleanExpression(format!("fromJSON({})", self.stringify()))
+                BooleanExpression::new_expr(format!("fromJSON({})", self.stringify()), self.meta())
             }
             fn from_json_to_num(&self) -> NumberExpression {
-                NumberExpression(format!("fromJSON({})", self.stringify()))
+                NumberExpression::new_expr(format!("fromJSON({})", self.stringify()), self.meta())
             }
             fn from_json_to_str(&self) -> Self {
-                Self(format!("fromJSON({})", self.stringify()))
+                Self::new_expr(format!("fromJSON({})", self.stringify()), self.meta())
             }
             fn from_json_to_array(&self) -> ArrayExpression {
-                ArrayExpression(format!("fromJSON({})", self.stringify()))
+                ArrayExpression::new_expr(format!("fromJSON({})", self.stringify()), self.meta())
             }
             fn from_json_to_obj(&self) -> ObjectExpression {
-                ObjectExpression(format!("fromJSON({})", self.stringify()))
+                ObjectExpression::new_expr(format!("fromJSON({})", self.stringify()), self.meta())
             }
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> ObjectExpression {
-                ObjectExpression(Self::format_access(self.stringify(), &key))
+                ObjectExpression::new_expr(Self::format_access(self.stringify(), &key), self.meta())
             }
             fn __getattr__(&self, key: String) -> ObjectExpression {
                 self.__getitem__(key)
@@ -842,163 +1250,268 @@ mod yamloom {
         impl GithubContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression("github".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts("github", Contexts::GITHUB))
             }
             #[getter]
             fn action(&self) -> StringExpression {
-                StringExpression("github.action".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.action",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn action_path(&self) -> StringExpression {
-                StringExpression("github.action_path".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.action_path",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn action_ref(&self) -> StringExpression {
-                StringExpression("github.action_ref".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.action_ref",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn action_repository(&self) -> StringExpression {
-                StringExpression("github.action_repository".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.action_repository",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn action_status(&self) -> StringExpression {
-                StringExpression("github.action_status".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.action_status",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn actor(&self) -> StringExpression {
-                StringExpression("github.actor".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.actor",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn actor_id(&self) -> StringExpression {
-                StringExpression("github.actor_id".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.actor_id",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn api_url(&self) -> StringExpression {
-                StringExpression("github.api_url".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.api_url",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn base_ref(&self) -> StringExpression {
-                StringExpression("github.base_ref".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.base_ref",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn env(&self) -> StringExpression {
-                StringExpression("github.env".to_string())
+                StringExpression::from_base(ExprBase::with_contexts("github.env", Contexts::GITHUB))
             }
             #[getter]
             fn event(&self) -> ObjectExpression {
-                ObjectExpression("github.event".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts(
+                    "github.event",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn event_name(&self) -> StringExpression {
-                StringExpression("github.event_name".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.event_name",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn event_path(&self) -> StringExpression {
-                StringExpression("github.event_path".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.event_path",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn graphql_url(&self) -> StringExpression {
-                StringExpression("github.graphql_url".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.graphql_url",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn head_ref(&self) -> StringExpression {
-                StringExpression("github.head_ref".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.head_ref",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn job(&self) -> StringExpression {
-                StringExpression("github.job".to_string())
+                StringExpression::from_base(ExprBase::with_contexts("github.job", Contexts::GITHUB))
             }
             #[getter]
             fn path(&self) -> StringExpression {
-                StringExpression("github.path".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.path",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn r#ref(&self) -> StringExpression {
-                StringExpression("github.ref".to_string())
+                StringExpression::from_base(ExprBase::with_contexts("github.ref", Contexts::GITHUB))
             }
             #[getter]
             fn ref_name(&self) -> StringExpression {
-                StringExpression("github.ref_name".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.ref_name",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn ref_protected(&self) -> BooleanExpression {
-                BooleanExpression("github.ref_protected".to_string())
+                BooleanExpression::from_base(ExprBase::with_contexts(
+                    "github.ref_protected",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn ref_type(&self) -> StringExpression {
-                StringExpression("github.ref_type".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.ref_type",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn repository(&self) -> StringExpression {
-                StringExpression("github.repository".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.repository",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn reporitory_id(&self) -> StringExpression {
-                StringExpression("github.reporitory_id".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.reporitory_id",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn repositor_owner(&self) -> StringExpression {
-                StringExpression("github.repositor_owner".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.repositor_owner",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn repository_owner_id(&self) -> StringExpression {
-                StringExpression("github.repository_owner_id".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.repository_owner_id",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn repository_url(&self) -> StringExpression {
-                StringExpression("github.repositoryUrl".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.repositoryUrl",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn retention_days(&self) -> StringExpression {
-                StringExpression("github.retention_days".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.retention_days",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn run_id(&self) -> StringExpression {
-                StringExpression("github.run_id".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.run_id",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn run_number(&self) -> StringExpression {
-                StringExpression("github.run_number".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.run_number",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn run_attempt(&self) -> StringExpression {
-                StringExpression("github.run_attempt".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.run_attempt",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn secret_source(&self) -> StringExpression {
-                StringExpression("github.secret_source".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.secret_source",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn server_url(&self) -> StringExpression {
-                StringExpression("github.server_url".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.server_url",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn sha(&self) -> StringExpression {
-                StringExpression("github.sha".to_string())
+                StringExpression::from_base(ExprBase::with_contexts("github.sha", Contexts::GITHUB))
             }
             #[getter]
             fn token(&self) -> StringExpression {
-                StringExpression("github.token".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.token",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn triggering_actor(&self) -> StringExpression {
-                StringExpression("github.triggering_actor".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.triggering_actor",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn workflow(&self) -> StringExpression {
-                StringExpression("github.workflow".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.workflow",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn workflow_ref(&self) -> StringExpression {
-                StringExpression("github.workflow_ref".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.workflow_ref",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn workflow_sha(&self) -> StringExpression {
-                StringExpression("github.workflow_sha".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.workflow_sha",
+                    Contexts::GITHUB,
+                ))
             }
             #[getter]
             fn workspace(&self) -> StringExpression {
-                StringExpression("github.workspace".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "github.workspace",
+                    Contexts::GITHUB,
+                ))
             }
         }
 
@@ -1008,12 +1521,15 @@ mod yamloom {
         impl EnvContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression("env".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts("env", Contexts::ENV))
             }
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
-                StringExpression(ObjectExpression::format_access("env", &key))
+                StringExpression::from_base(ExprBase::with_contexts(
+                    ObjectExpression::format_access("env", &key),
+                    Contexts::ENV,
+                ))
             }
             fn __getattr__(&self, key: String) -> StringExpression {
                 self.__getitem__(key)
@@ -1026,12 +1542,15 @@ mod yamloom {
         impl VarsContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression("vars".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts("vars", Contexts::VARS))
             }
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
-                StringExpression(ObjectExpression::format_access("vars", &key))
+                StringExpression::from_base(ExprBase::with_contexts(
+                    ObjectExpression::format_access("vars", &key),
+                    Contexts::VARS,
+                ))
             }
             fn __getattr__(&self, key: String) -> StringExpression {
                 self.__getitem__(key)
@@ -1044,15 +1563,21 @@ mod yamloom {
         impl JobContainerContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression("job.container".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts("job.container", Contexts::JOB))
             }
             #[getter]
             fn id(&self) -> StringExpression {
-                StringExpression("job.container.id".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "job.container.id",
+                    Contexts::JOB,
+                ))
             }
             #[getter]
             fn network(&self) -> StringExpression {
-                StringExpression("job.container.network".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "job.container.network",
+                    Contexts::JOB,
+                ))
             }
         }
 
@@ -1062,19 +1587,28 @@ mod yamloom {
         impl JobServicesIdContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression(self.0.clone())
+                ObjectExpression::from_base(ExprBase::with_contexts(self.0.clone(), Contexts::JOB))
             }
             #[getter]
             fn id(&self) -> StringExpression {
-                StringExpression(format!("{}.id", self.0))
+                StringExpression::from_base(ExprBase::with_contexts(
+                    format!("{}.id", self.0),
+                    Contexts::JOB,
+                ))
             }
             #[getter]
             fn network(&self) -> StringExpression {
-                StringExpression(format!("{}.network", self.0))
+                StringExpression::from_base(ExprBase::with_contexts(
+                    format!("{}.network", self.0),
+                    Contexts::JOB,
+                ))
             }
             #[getter]
             fn ports(&self) -> ObjectExpression {
-                ObjectExpression(format!("{}.ports", self.0))
+                ObjectExpression::from_base(ExprBase::with_contexts(
+                    format!("{}.ports", self.0),
+                    Contexts::JOB,
+                ))
             }
         }
 
@@ -1084,7 +1618,7 @@ mod yamloom {
         impl JobServicesContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression("job.services".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts("job.services", Contexts::JOB))
             }
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
@@ -1102,11 +1636,14 @@ mod yamloom {
         impl JobContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression("job".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts("job", Contexts::JOB))
             }
             #[getter]
             fn check_run_id(&self) -> NumberExpression {
-                NumberExpression("job.check_run_id".to_string())
+                NumberExpression::from_base(ExprBase::with_contexts(
+                    "job.check_run_id",
+                    Contexts::JOB,
+                ))
             }
             #[getter]
             fn container(&self) -> JobContainerContext {
@@ -1118,7 +1655,7 @@ mod yamloom {
             }
             #[getter]
             fn status(&self) -> StringExpression {
-                StringExpression("job.status".to_string())
+                StringExpression::from_base(ExprBase::with_contexts("job.status", Contexts::JOB))
             }
         }
 
@@ -1128,12 +1665,15 @@ mod yamloom {
         impl JobsJobIdOutputsContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression(self.0.clone())
+                ObjectExpression::from_base(ExprBase::with_contexts(self.0.clone(), Contexts::JOBS))
             }
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
-                StringExpression(ObjectExpression::format_access(&self.0, &key))
+                StringExpression::from_base(ExprBase::with_contexts(
+                    ObjectExpression::format_access(&self.0, &key),
+                    Contexts::JOBS,
+                ))
             }
             fn __getattr__(&self, key: String) -> StringExpression {
                 self.__getitem__(key)
@@ -1146,11 +1686,14 @@ mod yamloom {
         impl JobsJobIdContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression(self.0.clone())
+                ObjectExpression::from_base(ExprBase::with_contexts(self.0.clone(), Contexts::JOBS))
             }
             #[getter]
             fn result(&self) -> StringExpression {
-                StringExpression(format!("{}.result", self.0))
+                StringExpression::from_base(ExprBase::with_contexts(
+                    format!("{}.result", self.0),
+                    Contexts::JOBS,
+                ))
             }
             #[getter]
             fn outputs(&self) -> JobsJobIdOutputsContext {
@@ -1164,7 +1707,7 @@ mod yamloom {
         impl JobsContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression("jobs".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts("jobs", Contexts::JOBS))
             }
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
@@ -1182,12 +1725,18 @@ mod yamloom {
         impl StepsStepIdOutputsContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression(self.0.clone())
+                ObjectExpression::from_base(ExprBase::with_contexts(
+                    self.0.clone(),
+                    Contexts::STEPS,
+                ))
             }
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
-                StringExpression(ObjectExpression::format_access(&self.0, &key))
+                StringExpression::from_base(ExprBase::with_contexts(
+                    ObjectExpression::format_access(&self.0, &key),
+                    Contexts::STEPS,
+                ))
             }
             fn __getattr__(&self, key: String) -> StringExpression {
                 self.__getitem__(key)
@@ -1200,7 +1749,10 @@ mod yamloom {
         impl StepsStepIdContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression(self.0.clone())
+                ObjectExpression::from_base(ExprBase::with_contexts(
+                    self.0.clone(),
+                    Contexts::STEPS,
+                ))
             }
             #[getter]
             fn outputs(&self) -> StepsStepIdOutputsContext {
@@ -1208,11 +1760,17 @@ mod yamloom {
             }
             #[getter]
             fn conclusion(&self) -> StringExpression {
-                StringExpression(format!("{}.conclusion", self.0))
+                StringExpression::from_base(ExprBase::with_contexts(
+                    format!("{}.conclusion", self.0),
+                    Contexts::STEPS,
+                ))
             }
             #[getter]
             fn outcome(&self) -> StringExpression {
-                StringExpression(format!("{}.outcome", self.0))
+                StringExpression::from_base(ExprBase::with_contexts(
+                    format!("{}.outcome", self.0),
+                    Contexts::STEPS,
+                ))
             }
         }
 
@@ -1222,7 +1780,7 @@ mod yamloom {
         impl StepsContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression("steps".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts("steps", Contexts::STEPS))
             }
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
@@ -1240,35 +1798,53 @@ mod yamloom {
         impl RunnerContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression("runner".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts("runner", Contexts::RUNNER))
             }
             #[getter]
             fn name(&self) -> StringExpression {
-                StringExpression("runner.name".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "runner.name",
+                    Contexts::RUNNER,
+                ))
             }
             #[getter]
             fn os(&self) -> StringExpression {
-                StringExpression("runner.os".to_string())
+                StringExpression::from_base(ExprBase::with_contexts("runner.os", Contexts::RUNNER))
             }
             #[getter]
             fn arch(&self) -> StringExpression {
-                StringExpression("runner.arch".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "runner.arch",
+                    Contexts::RUNNER,
+                ))
             }
             #[getter]
             fn temp(&self) -> StringExpression {
-                StringExpression("runner.temp".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "runner.temp",
+                    Contexts::RUNNER,
+                ))
             }
             #[getter]
             fn tool_cache(&self) -> StringExpression {
-                StringExpression("runner.tool_cache".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "runner.tool_cache",
+                    Contexts::RUNNER,
+                ))
             }
             #[getter]
             fn debug(&self) -> StringExpression {
-                StringExpression("runner.debug".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "runner.debug",
+                    Contexts::RUNNER,
+                ))
             }
             #[getter]
             fn environment(&self) -> StringExpression {
-                StringExpression("runner.environment".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "runner.environment",
+                    Contexts::RUNNER,
+                ))
             }
         }
 
@@ -1278,16 +1854,22 @@ mod yamloom {
         impl SecretsContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression("secrets".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts("secrets", Contexts::SECRETS))
             }
             #[getter]
             fn github_token(&self) -> StringExpression {
-                StringExpression("secrets.GITHUB_TOKEN".to_string())
+                StringExpression::from_base(ExprBase::with_contexts(
+                    "secrets.GITHUB_TOKEN",
+                    Contexts::SECRETS,
+                ))
             }
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
-                StringExpression(ObjectExpression::format_access("secrets", &key))
+                StringExpression::from_base(ExprBase::with_contexts(
+                    ObjectExpression::format_access("secrets", &key),
+                    Contexts::SECRETS,
+                ))
             }
             fn __getattr__(&self, key: String) -> StringExpression {
                 self.__getitem__(key)
@@ -1300,23 +1882,35 @@ mod yamloom {
         impl StrategyContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression("strategy".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts("strategy", Contexts::STRATEGY))
             }
             #[getter]
             fn fail_fast(&self) -> BooleanExpression {
-                BooleanExpression("strategy.fail-fast".to_string())
+                BooleanExpression::from_base(ExprBase::with_contexts(
+                    "strategy.fail-fast",
+                    Contexts::STRATEGY,
+                ))
             }
             #[getter]
             fn job_index(&self) -> NumberExpression {
-                NumberExpression("strategy.job-index".to_string())
+                NumberExpression::from_base(ExprBase::with_contexts(
+                    "strategy.job-index",
+                    Contexts::STRATEGY,
+                ))
             }
             #[getter]
             fn job_total(&self) -> NumberExpression {
-                NumberExpression("strategy.job-total".to_string())
+                NumberExpression::from_base(ExprBase::with_contexts(
+                    "strategy.job-total",
+                    Contexts::STRATEGY,
+                ))
             }
             #[getter]
             fn max_parallel(&self) -> NumberExpression {
-                NumberExpression("strategy.max-parallel".to_string())
+                NumberExpression::from_base(ExprBase::with_contexts(
+                    "strategy.max-parallel",
+                    Contexts::STRATEGY,
+                ))
             }
         }
 
@@ -1326,12 +1920,15 @@ mod yamloom {
         impl MatrixContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression("matrix".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts("matrix", Contexts::MATRIX))
             }
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> ObjectExpression {
-                ObjectExpression(ObjectExpression::format_access("matrix", &key))
+                ObjectExpression::from_base(ExprBase::with_contexts(
+                    ObjectExpression::format_access("matrix", &key),
+                    Contexts::MATRIX,
+                ))
             }
             fn __getattr__(&self, key: String) -> ObjectExpression {
                 self.__getitem__(key)
@@ -1344,12 +1941,18 @@ mod yamloom {
         impl NeedsJobIdOutputsContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression(self.0.clone())
+                ObjectExpression::from_base(ExprBase::with_contexts(
+                    self.0.clone(),
+                    Contexts::NEEDS,
+                ))
             }
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> StringExpression {
-                StringExpression(ObjectExpression::format_access(&self.0, &key))
+                StringExpression::from_base(ExprBase::with_contexts(
+                    ObjectExpression::format_access(&self.0, &key),
+                    Contexts::NEEDS,
+                ))
             }
             fn __getattr__(&self, key: String) -> StringExpression {
                 self.__getitem__(key)
@@ -1362,7 +1965,10 @@ mod yamloom {
         impl NeedsJobIdContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression(self.0.clone())
+                ObjectExpression::from_base(ExprBase::with_contexts(
+                    self.0.clone(),
+                    Contexts::NEEDS,
+                ))
             }
             #[getter]
             fn outputs(&self) -> NeedsJobIdOutputsContext {
@@ -1370,7 +1976,10 @@ mod yamloom {
             }
             #[getter]
             fn result(&self) -> StringExpression {
-                StringExpression(format!("{}.result", self.0))
+                StringExpression::from_base(ExprBase::with_contexts(
+                    format!("{}.result", self.0),
+                    Contexts::NEEDS,
+                ))
             }
         }
 
@@ -1380,7 +1989,7 @@ mod yamloom {
         impl NeedsContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression("needs".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts("needs", Contexts::NEEDS))
             }
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
@@ -1398,12 +2007,15 @@ mod yamloom {
         impl InputsContext {
             #[getter]
             fn expr(&self) -> ObjectExpression {
-                ObjectExpression("inputs".to_string())
+                ObjectExpression::from_base(ExprBase::with_contexts("inputs", Contexts::INPUTS))
             }
             #[classattr]
             const __contains__: Option<Py<PyAny>> = None;
             fn __getitem__(&self, key: String) -> ObjectExpression {
-                ObjectExpression(ObjectExpression::format_access("inputs", &key))
+                ObjectExpression::from_base(ExprBase::with_contexts(
+                    ObjectExpression::format_access("inputs", &key),
+                    Contexts::INPUTS,
+                ))
             }
             fn __getattr__(&self, key: String) -> ObjectExpression {
                 self.__getitem__(key)
@@ -1468,24 +2080,33 @@ mod yamloom {
 
         #[pyfunction]
         fn lit_str(s: String) -> StringExpression {
-            StringExpression(escape_string(&s))
+            StringExpression::new_expr(escape_string(&s), ExprMeta::empty())
         }
 
         #[pyfunction]
         fn lit_bool(b: bool) -> BooleanExpression {
-            BooleanExpression(if b {
-                "true".to_string()
-            } else {
-                "false".to_string()
-            })
+            BooleanExpression::new_expr(
+                if b {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                },
+                ExprMeta::empty(),
+            )
         }
 
         #[pyfunction]
         fn lit_num(n: Bound<PyAny>) -> PyResult<NumberExpression> {
             if n.is_instance_of::<PyFloat>() {
-                Ok(NumberExpression(n.extract::<f64>()?.to_string()))
+                Ok(NumberExpression::new_expr(
+                    n.extract::<f64>()?.to_string(),
+                    ExprMeta::empty(),
+                ))
             } else if n.is_instance_of::<PyInt>() {
-                Ok(NumberExpression(n.extract::<i64>()?.to_string()))
+                Ok(NumberExpression::new_expr(
+                    n.extract::<i64>()?.to_string(),
+                    ExprMeta::empty(),
+                ))
             } else {
                 Err(PyValueError::new_err("Expected a number"))
             }
@@ -1496,6 +2117,383 @@ mod yamloom {
     type BoolLike = Either<BooleanExpression, bool>;
     type IntLike = Either<NumberExpression, i64>;
 
+    macro_rules! ctx {
+        ($first:ident) => {
+            Contexts::$first
+        };
+        ($first:ident, $($rest:ident),+ $(,)?) => {
+            Contexts::$first$(.union(Contexts::$rest))+
+        };
+    }
+
+    macro_rules! funcs {
+        ($first:ident) => {
+            Funcs::$first
+        };
+        ($first:ident, $($rest:ident),+ $(,)?) => {
+            Funcs::$first$(.union(Funcs::$rest))+
+        };
+    }
+
+    const ALLOWED_WORKFLOW_RUN_NAME: Allowed =
+        Allowed::new(ctx!(GITHUB, INPUTS, VARS), Funcs::NONE, "run-name");
+    const ALLOWED_WORKFLOW_CONCURRENCY: Allowed =
+        Allowed::new(ctx!(GITHUB, INPUTS, VARS), Funcs::NONE, "concurrency");
+    const ALLOWED_WORKFLOW_ENV: Allowed =
+        Allowed::new(ctx!(GITHUB, SECRETS, INPUTS, VARS), Funcs::NONE, "env");
+    const ALLOWED_WORKFLOW_CALL_INPUT_DEFAULT: Allowed = Allowed::new(
+        ctx!(GITHUB, INPUTS, VARS),
+        Funcs::NONE,
+        "on.workflow_call.inputs.<inputs_id>.default",
+    );
+    const ALLOWED_WORKFLOW_CALL_OUTPUT_VALUE: Allowed = Allowed::new(
+        ctx!(GITHUB, JOBS, VARS, INPUTS),
+        Funcs::NONE,
+        "on.workflow_call.outputs.<output_id>.value",
+    );
+
+    const ALLOWED_JOB_NAME: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, MATRIX, VARS, INPUTS),
+        Funcs::NONE,
+        "jobs.<job_id>.name",
+    );
+    const ALLOWED_JOB_IF: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, VARS, INPUTS),
+        funcs!(ALWAYS, CANCELLED, SUCCESS, FAILURE),
+        "jobs.<job_id>.if",
+    );
+    const ALLOWED_JOB_RUNS_ON: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, MATRIX, VARS, INPUTS),
+        Funcs::NONE,
+        "jobs.<job_id>.runs-on",
+    );
+    const ALLOWED_JOB_ENV: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, MATRIX, VARS, SECRETS, INPUTS),
+        Funcs::NONE,
+        "jobs.<job_id>.env",
+    );
+    const ALLOWED_JOB_ENVIRONMENT: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, MATRIX, VARS, INPUTS),
+        Funcs::NONE,
+        "jobs.<job_id>.environment",
+    );
+    const ALLOWED_JOB_ENVIRONMENT_URL: Allowed = Allowed::new(
+        ctx!(
+            GITHUB, NEEDS, STRATEGY, MATRIX, JOB, RUNNER, ENV, VARS, STEPS, INPUTS
+        ),
+        Funcs::NONE,
+        "jobs.<job_id>.environment.url",
+    );
+    const ALLOWED_JOB_CONCURRENCY: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, MATRIX, INPUTS, VARS),
+        Funcs::NONE,
+        "jobs.<job_id>.concurrency",
+    );
+    const ALLOWED_JOB_OUTPUTS: Allowed = Allowed::new(
+        ctx!(
+            GITHUB, NEEDS, STRATEGY, MATRIX, JOB, RUNNER, ENV, VARS, SECRETS, STEPS, INPUTS
+        ),
+        Funcs::NONE,
+        "jobs.<job_id>.outputs.<output_id>",
+    );
+    const ALLOWED_JOB_CONTINUE_ON_ERROR: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, VARS, MATRIX, INPUTS),
+        Funcs::NONE,
+        "jobs.<job_id>.continue-on-error",
+    );
+    const ALLOWED_JOB_DEFAULTS_RUN: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, MATRIX, ENV, VARS, INPUTS),
+        Funcs::NONE,
+        "jobs.<job_id>.defaults.run",
+    );
+    const ALLOWED_JOB_STRATEGY: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, VARS, INPUTS),
+        Funcs::NONE,
+        "jobs.<job_id>.strategy",
+    );
+    const ALLOWED_JOB_TIMEOUT_MINUTES: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, MATRIX, VARS, INPUTS),
+        Funcs::NONE,
+        "jobs.<job_id>.timeout-minutes",
+    );
+    const ALLOWED_JOB_WITH: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, MATRIX, INPUTS, VARS),
+        Funcs::NONE,
+        "jobs.<job_id>.with.<with_id>",
+    );
+    const ALLOWED_JOB_SECRETS: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, MATRIX, SECRETS, INPUTS, VARS),
+        Funcs::NONE,
+        "jobs.<job_id>.secrets.<secrets_id>",
+    );
+
+    const ALLOWED_JOB_CONTAINER: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, MATRIX, VARS, INPUTS),
+        Funcs::NONE,
+        "jobs.<job_id>.container",
+    );
+    const ALLOWED_JOB_CONTAINER_CREDENTIALS: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, MATRIX, ENV, VARS, SECRETS, INPUTS),
+        Funcs::NONE,
+        "jobs.<job_id>.container.credentials",
+    );
+    const ALLOWED_JOB_CONTAINER_ENV: Allowed = Allowed::new(
+        ctx!(
+            GITHUB, NEEDS, STRATEGY, MATRIX, JOB, RUNNER, ENV, VARS, SECRETS, INPUTS
+        ),
+        Funcs::NONE,
+        "jobs.<job_id>.container.env.<env_id>",
+    );
+    const ALLOWED_JOB_CONTAINER_IMAGE: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, MATRIX, VARS, INPUTS),
+        Funcs::NONE,
+        "jobs.<job_id>.container.image",
+    );
+
+    const ALLOWED_JOB_SERVICES: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, MATRIX, VARS, INPUTS),
+        Funcs::NONE,
+        "jobs.<job_id>.services",
+    );
+    const ALLOWED_JOB_SERVICES_CREDENTIALS: Allowed = Allowed::new(
+        ctx!(GITHUB, NEEDS, STRATEGY, MATRIX, ENV, VARS, SECRETS, INPUTS),
+        Funcs::NONE,
+        "jobs.<job_id>.services.<service_id>.credentials",
+    );
+    const ALLOWED_JOB_SERVICES_ENV: Allowed = Allowed::new(
+        ctx!(
+            GITHUB, NEEDS, STRATEGY, MATRIX, JOB, RUNNER, ENV, VARS, SECRETS, INPUTS
+        ),
+        Funcs::NONE,
+        "jobs.<job_id>.services.<service_id>.env.<env_id>",
+    );
+
+    const ALLOWED_STEP_IF: Allowed = Allowed::new(
+        ctx!(
+            GITHUB, NEEDS, STRATEGY, MATRIX, JOB, RUNNER, ENV, VARS, STEPS, INPUTS
+        ),
+        funcs!(ALWAYS, CANCELLED, SUCCESS, FAILURE, HASH_FILES),
+        "jobs.<job_id>.steps.if",
+    );
+    const ALLOWED_STEP_NAME: Allowed = Allowed::new(
+        ctx!(
+            GITHUB, NEEDS, STRATEGY, MATRIX, JOB, RUNNER, ENV, VARS, SECRETS, STEPS, INPUTS
+        ),
+        Funcs::HASH_FILES,
+        "jobs.<job_id>.steps.name",
+    );
+    const ALLOWED_STEP_RUN: Allowed = Allowed::new(
+        ctx!(
+            GITHUB, NEEDS, STRATEGY, MATRIX, JOB, RUNNER, ENV, VARS, SECRETS, STEPS, INPUTS
+        ),
+        Funcs::HASH_FILES,
+        "jobs.<job_id>.steps.run",
+    );
+    const ALLOWED_STEP_ENV: Allowed = Allowed::new(
+        ctx!(
+            GITHUB, NEEDS, STRATEGY, MATRIX, JOB, RUNNER, ENV, VARS, SECRETS, STEPS, INPUTS
+        ),
+        Funcs::HASH_FILES,
+        "jobs.<job_id>.steps.env",
+    );
+    const ALLOWED_STEP_WITH: Allowed = Allowed::new(
+        ctx!(
+            GITHUB, NEEDS, STRATEGY, MATRIX, JOB, RUNNER, ENV, VARS, SECRETS, STEPS, INPUTS
+        ),
+        Funcs::HASH_FILES,
+        "jobs.<job_id>.steps.with",
+    );
+    const ALLOWED_STEP_WORKING_DIRECTORY: Allowed = Allowed::new(
+        ctx!(
+            GITHUB, NEEDS, STRATEGY, MATRIX, JOB, RUNNER, ENV, VARS, SECRETS, STEPS, INPUTS
+        ),
+        Funcs::HASH_FILES,
+        "jobs.<job_id>.steps.working-directory",
+    );
+    const ALLOWED_STEP_CONTINUE_ON_ERROR: Allowed = Allowed::new(
+        ctx!(
+            GITHUB, NEEDS, STRATEGY, MATRIX, JOB, RUNNER, ENV, VARS, SECRETS, STEPS, INPUTS
+        ),
+        Funcs::HASH_FILES,
+        "jobs.<job_id>.steps.continue-on-error",
+    );
+    const ALLOWED_STEP_TIMEOUT_MINUTES: Allowed = Allowed::new(
+        ctx!(
+            GITHUB, NEEDS, STRATEGY, MATRIX, JOB, RUNNER, ENV, VARS, SECRETS, STEPS, INPUTS
+        ),
+        Funcs::HASH_FILES,
+        "jobs.<job_id>.steps.timeout-minutes",
+    );
+
+    fn validate_string_like(value: &StringLike, allowed: Allowed) -> PyResult<()> {
+        if let Either::A(expr) = value {
+            expr.validate_allowed(allowed)?;
+        }
+        Ok(())
+    }
+
+    fn validate_bool_like(value: &BoolLike, allowed: Allowed) -> PyResult<()> {
+        if let Either::A(expr) = value {
+            expr.validate_allowed(allowed)?;
+        }
+        Ok(())
+    }
+
+    fn validate_int_like(value: &IntLike, allowed: Allowed) -> PyResult<()> {
+        if let Either::A(expr) = value {
+            expr.validate_allowed(allowed)?;
+        }
+        Ok(())
+    }
+
+    fn validate_condition(
+        value: &Either<BooleanExpression, String>,
+        allowed: Allowed,
+    ) -> PyResult<()> {
+        if let Either::A(expr) = value {
+            expr.validate_allowed(allowed)?;
+        }
+        Ok(())
+    }
+
+    fn validate_string_map(values: &PyMap<String, StringLike>, allowed: Allowed) -> PyResult<()> {
+        for (_, value) in values.iter() {
+            validate_string_like(value, allowed)?;
+        }
+        Ok(())
+    }
+
+    fn validate_string_vec(values: &[StringLike], allowed: Allowed) -> PyResult<()> {
+        for value in values {
+            validate_string_like(value, allowed)?;
+        }
+        Ok(())
+    }
+
+    fn validate_runs_on(runs_on: &RunsOn) -> PyResult<()> {
+        match runs_on {
+            RunsOn::String(value) => validate_string_like(value, ALLOWED_JOB_RUNS_ON),
+            RunsOn::Array(values) => validate_string_vec(values, ALLOWED_JOB_RUNS_ON),
+            RunsOn::Spec(spec) => match &spec.options {
+                RunsOnSpecOptions::Group(group) => validate_string_like(group, ALLOWED_JOB_RUNS_ON),
+                RunsOnSpecOptions::Labels(labels) => {
+                    validate_string_like(labels, ALLOWED_JOB_RUNS_ON)
+                }
+                RunsOnSpecOptions::GroupAndLabels(group, labels) => {
+                    validate_string_like(group, ALLOWED_JOB_RUNS_ON)?;
+                    validate_string_like(labels, ALLOWED_JOB_RUNS_ON)
+                }
+            },
+        }
+    }
+
+    fn validate_with_opts(opts: &Bound<'_, PyDict>, allowed: Allowed) -> PyResult<()> {
+        for (_, value) in opts.iter() {
+            if let Ok(expr) = value.extract::<BooleanExpression>() {
+                expr.validate_allowed(allowed)?;
+            } else if let Ok(expr) = value.extract::<StringExpression>() {
+                expr.validate_allowed(allowed)?;
+            } else if let Ok(expr) = value.extract::<NumberExpression>() {
+                expr.validate_allowed(allowed)?;
+            } else if let Ok(expr) = value.extract::<ArrayExpression>() {
+                expr.validate_allowed(allowed)?;
+            } else if let Ok(expr) = value.extract::<ObjectExpression>() {
+                expr.validate_allowed(allowed)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_step_options(
+        name: &Option<StringLike>,
+        condition: &Option<Either<BooleanExpression, String>>,
+        working_directory: &Option<StringLike>,
+        env: &Option<PyMap<String, StringLike>>,
+        continue_on_error: &Option<BoolLike>,
+        timeout_minutes: &Option<IntLike>,
+    ) -> PyResult<()> {
+        if let Some(name) = name {
+            validate_string_like(name, ALLOWED_STEP_NAME)?;
+        }
+        if let Some(condition) = condition {
+            validate_condition(condition, ALLOWED_STEP_IF)?;
+        }
+        if let Some(working_directory) = working_directory {
+            validate_string_like(working_directory, ALLOWED_STEP_WORKING_DIRECTORY)?;
+        }
+        if let Some(env) = env {
+            validate_string_map(env, ALLOWED_STEP_ENV)?;
+        }
+        if let Some(continue_on_error) = continue_on_error {
+            validate_bool_like(continue_on_error, ALLOWED_STEP_CONTINUE_ON_ERROR)?;
+        }
+        if let Some(timeout_minutes) = timeout_minutes {
+            validate_int_like(timeout_minutes, ALLOWED_STEP_TIMEOUT_MINUTES)?;
+        }
+        Ok(())
+    }
+
+    fn validate_container_for_job(container: &Container) -> PyResult<()> {
+        validate_string_like(&container.image, ALLOWED_JOB_CONTAINER_IMAGE)?;
+        if let Some(options) = &container.options {
+            validate_string_like(options, ALLOWED_JOB_CONTAINER)?;
+        }
+        if let Some(volumes) = &container.volumes {
+            validate_string_vec(volumes, ALLOWED_JOB_CONTAINER)?;
+        }
+        if let Some(ports) = &container.ports {
+            for port in ports {
+                validate_int_like(port, ALLOWED_JOB_CONTAINER)?;
+            }
+        }
+        if let Some(credentials) = &container.credentials {
+            validate_string_like(&credentials.username, ALLOWED_JOB_CONTAINER_CREDENTIALS)?;
+            validate_string_like(&credentials.password, ALLOWED_JOB_CONTAINER_CREDENTIALS)?;
+        }
+        if let Some(env) = &container.env {
+            validate_string_map(env, ALLOWED_JOB_CONTAINER_ENV)?;
+        }
+        Ok(())
+    }
+
+    fn validate_container_for_service(container: &Container) -> PyResult<()> {
+        validate_string_like(&container.image, ALLOWED_JOB_SERVICES)?;
+        if let Some(options) = &container.options {
+            validate_string_like(options, ALLOWED_JOB_SERVICES)?;
+        }
+        if let Some(volumes) = &container.volumes {
+            validate_string_vec(volumes, ALLOWED_JOB_SERVICES)?;
+        }
+        if let Some(ports) = &container.ports {
+            for port in ports {
+                validate_int_like(port, ALLOWED_JOB_SERVICES)?;
+            }
+        }
+        if let Some(credentials) = &container.credentials {
+            validate_string_like(&credentials.username, ALLOWED_JOB_SERVICES_CREDENTIALS)?;
+            validate_string_like(&credentials.password, ALLOWED_JOB_SERVICES_CREDENTIALS)?;
+        }
+        if let Some(env) = &container.env {
+            validate_string_map(env, ALLOWED_JOB_SERVICES_ENV)?;
+        }
+        Ok(())
+    }
+
+    fn validate_concurrency(concurrency: &Concurrency, allowed: Allowed) -> PyResult<()> {
+        validate_string_like(&concurrency.group, allowed)?;
+        if let Some(cancel_in_progress) = &concurrency.cancel_in_progress {
+            validate_bool_like(cancel_in_progress, allowed)?;
+        }
+        Ok(())
+    }
+
+    fn validate_environment(environment: &Environment) -> PyResult<()> {
+        validate_string_like(&environment.name, ALLOWED_JOB_ENVIRONMENT)?;
+        if let Some(url) = &environment.url {
+            validate_string_like(url, ALLOWED_JOB_ENVIRONMENT_URL)?;
+        }
+        Ok(())
+    }
     impl TryYamlable for Bound<'_, PyAny> {
         fn try_as_yaml(&self) -> PyResult<Yaml> {
             if self.is_none() {
@@ -1660,12 +2658,22 @@ mod yamloom {
         continue_on_error: Option<BoolLike>,
         timeout_minutes: Option<IntLike>,
     ) -> PyResult<Step> {
-        let script = collect_script_lines(
-            script
-                .iter()
-                .map(|item| item.extract::<StringLike>())
-                .collect::<PyResult<Vec<StringLike>>>()?,
-        );
+        let script = script
+            .iter()
+            .map(|item| item.extract::<StringLike>())
+            .collect::<PyResult<Vec<StringLike>>>()?;
+        for line in &script {
+            validate_string_like(line, ALLOWED_STEP_RUN)?;
+        }
+        validate_step_options(
+            &name,
+            &condition,
+            &working_directory,
+            &env,
+            &continue_on_error,
+            &timeout_minutes,
+        )?;
+        let script = collect_script_lines(script);
         Ok(Step {
             name,
             step_action: StepAction::Run(script),
@@ -1695,6 +2703,20 @@ mod yamloom {
         continue_on_error: Option<BoolLike>,
         timeout_minutes: Option<IntLike>,
     ) -> PyResult<Step> {
+        validate_step_options(
+            &name,
+            &condition,
+            &working_directory,
+            &env,
+            &continue_on_error,
+            &timeout_minutes,
+        )?;
+        if let Some(args) = &args {
+            validate_string_like(args, ALLOWED_STEP_WITH)?;
+        }
+        if let Some(entrypoint) = &entrypoint {
+            validate_string_like(entrypoint, ALLOWED_STEP_WITH)?;
+        }
         let with_args = if with_opts.is_some() || args.is_some() || entrypoint.is_some() {
             Some(WithArgs {
                 options: with_opts,
@@ -1742,6 +2764,9 @@ mod yamloom {
         continue_on_error: Option<BoolLike>,
         timeout_minutes: Option<IntLike>,
     ) -> PyResult<Step> {
+        if let Some(with_opts) = &with_opts {
+            validate_with_opts(with_opts, ALLOWED_STEP_WITH)?;
+        }
         make_action(
             name,
             action,
@@ -2396,7 +3421,7 @@ mod yamloom {
         env: Option<PyMap<String, StringLike>>,
         defaults: Option<Defaults>,
         steps: Vec<Step>,
-        timeout_minutes: Option<i64>,
+        timeout_minutes: Option<IntLike>,
         strategy: Option<Strategy>,
         continue_on_error: Option<Either<StringLike, BoolLike>>,
         container: Option<Container>,
@@ -2422,7 +3447,7 @@ mod yamloom {
             outputs: Option<PyMap<String, StringLike>>,
             env: Option<PyMap<String, StringLike>>,
             defaults: Option<Defaults>,
-            timeout_minutes: Option<i64>,
+            timeout_minutes: Option<IntLike>,
             strategy: Option<Strategy>,
             continue_on_error: Option<Either<StringLike, BoolLike>>,
             container: Option<Container>,
@@ -2431,6 +3456,74 @@ mod yamloom {
             with_opts: Option<Bound<PyDict>>,
             secrets: Option<JobSecrets>,
         ) -> PyResult<Self> {
+            if let Some(name) = &name {
+                validate_string_like(name, ALLOWED_JOB_NAME)?;
+            }
+            if let Some(condition) = &condition {
+                validate_condition(condition, ALLOWED_JOB_IF)?;
+            }
+            if let Some(runs_on) = &runs_on {
+                validate_runs_on(runs_on)?;
+            }
+            if let Some(environment) = &environment {
+                validate_environment(environment)?;
+            }
+            if let Some(concurrency) = &concurrency {
+                validate_concurrency(concurrency, ALLOWED_JOB_CONCURRENCY)?;
+            }
+            if let Some(outputs) = &outputs {
+                validate_string_map(outputs, ALLOWED_JOB_OUTPUTS)?;
+            }
+            if let Some(env) = &env {
+                validate_string_map(env, ALLOWED_JOB_ENV)?;
+            }
+            if let Some(defaults) = &defaults
+                && let Some(run_defaults) = &defaults.run_defaults {
+                    if let Some(shell) = &run_defaults.shell {
+                        validate_string_like(shell, ALLOWED_JOB_DEFAULTS_RUN)?;
+                    }
+                    if let Some(working_directory) = &run_defaults.working_directory {
+                        validate_string_like(working_directory, ALLOWED_JOB_DEFAULTS_RUN)?;
+                    }
+                }
+            if let Some(strategy) = &strategy {
+                if let Some(fast_fail) = &strategy.fast_fail {
+                    validate_bool_like(fast_fail, ALLOWED_JOB_STRATEGY)?;
+                }
+                if let Some(max_parallel) = &strategy.max_parallel {
+                    validate_int_like(max_parallel, ALLOWED_JOB_STRATEGY)?;
+                }
+            }
+            if let Some(timeout_minutes) = &timeout_minutes {
+                validate_int_like(timeout_minutes, ALLOWED_JOB_TIMEOUT_MINUTES)?;
+            }
+            if let Some(continue_on_error) = &continue_on_error {
+                match continue_on_error {
+                    Either::A(string_like) => {
+                        validate_string_like(string_like, ALLOWED_JOB_CONTINUE_ON_ERROR)?;
+                    }
+                    Either::B(bool_like) => {
+                        validate_bool_like(bool_like, ALLOWED_JOB_CONTINUE_ON_ERROR)?;
+                    }
+                }
+            }
+            if let Some(container) = &container {
+                validate_container_for_job(container)?;
+            }
+            if let Some(services) = &services {
+                for (_, container) in services.iter() {
+                    validate_container_for_service(container)?;
+                }
+            }
+            if let Some(with_opts) = &with_opts {
+                validate_with_opts(with_opts, ALLOWED_JOB_WITH)?;
+            }
+            if let Some(secrets) = &secrets
+                && let JobSecretsOptions::Secrets(values) = &secrets.options {
+                    for (_, value) in values.iter() {
+                        validate_string_like(value, ALLOWED_JOB_SECRETS)?;
+                    }
+                }
             Ok(Self {
                 name,
                 permissions,
@@ -2476,7 +3569,7 @@ mod yamloom {
             }
             out.insert_yaml_opt("strategy", &self.strategy);
             out.insert_yaml("steps", &self.steps);
-            out.insert_yaml_opt("timeout-minutes", self.timeout_minutes);
+            out.insert_yaml_opt("timeout-minutes", &self.timeout_minutes);
             out.insert_yaml_opt("continue-on-error", &self.continue_on_error);
             out.insert_yaml_opt("container", &self.container);
             out.insert_yaml_opt("services", &self.services);
@@ -3498,9 +4591,10 @@ mod yamloom {
         type Error = PyErr;
         fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
             if let Ok(num) = obj.extract::<u8>()
-                && num <= 59 {
-                    return Ok(CronMinute(num));
-                }
+                && num <= 59
+            {
+                return Ok(CronMinute(num));
+            }
             Err(PyValueError::new_err(
                 "Minute must be an integer in range 0..=59",
             ))
@@ -3514,9 +4608,10 @@ mod yamloom {
         type Error = PyErr;
         fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
             if let Ok(num) = obj.extract::<u8>()
-                && num <= 23 {
-                    return Ok(CronHour(num));
-                }
+                && num <= 23
+            {
+                return Ok(CronHour(num));
+            }
             Err(PyValueError::new_err(
                 "Hour must be an integer in range 0..=23",
             ))
@@ -3530,9 +4625,10 @@ mod yamloom {
         type Error = PyErr;
         fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
             if let Ok(num) = obj.extract::<u8>()
-                && (1..=31).contains(&num) {
-                    return Ok(CronDay(num));
-                }
+                && (1..=31).contains(&num)
+            {
+                return Ok(CronDay(num));
+            }
             Err(PyValueError::new_err(
                 "Hour must be an integer in range 1..=31",
             ))
@@ -3547,9 +4643,10 @@ mod yamloom {
         fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
             let msg = "Month must be an integer in range 1..=12";
             if let Ok(num) = obj.extract::<u8>()
-                && (1..=12).contains(&num) {
-                    return Ok(CronMonth(num));
-                }
+                && (1..=12).contains(&num)
+            {
+                return Ok(CronMonth(num));
+            }
             Err(PyValueError::new_err(msg))
         }
     }
@@ -3562,9 +4659,10 @@ mod yamloom {
         fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
             let msg = "Day of week must be an integer in range 0..=6 (0=Sunday)";
             if let Ok(num) = obj.extract::<u8>()
-                && num <= 6 {
-                    return Ok(CronDayOfWeek(num));
-                }
+                && num <= 6
+            {
+                return Ok(CronDayOfWeek(num));
+            }
             Err(PyValueError::new_err(msg))
         }
     }
@@ -3954,12 +5052,15 @@ mod yamloom {
             description: Option<String>,
             default: Option<BoolLike>,
             required: Option<bool>,
-        ) -> Self {
-            Self {
+        ) -> PyResult<Self> {
+            if let Some(default) = &default {
+                validate_bool_like(default, ALLOWED_WORKFLOW_CALL_INPUT_DEFAULT)?;
+            }
+            Ok(Self {
                 description,
                 input_type: WorkflowInputType::Boolean { default },
                 required,
-            }
+            })
         }
         #[staticmethod]
         #[pyo3(signature = (*, description=None, default=None, required=None))]
@@ -3967,12 +5068,15 @@ mod yamloom {
             description: Option<String>,
             default: Option<IntLike>,
             required: Option<bool>,
-        ) -> Self {
-            Self {
+        ) -> PyResult<Self> {
+            if let Some(default) = &default {
+                validate_int_like(default, ALLOWED_WORKFLOW_CALL_INPUT_DEFAULT)?;
+            }
+            Ok(Self {
                 description,
                 input_type: WorkflowInputType::Number { default },
                 required,
-            }
+            })
         }
         #[staticmethod]
         #[pyo3(signature = (*, description=None, default=None, required=None))]
@@ -3980,12 +5084,15 @@ mod yamloom {
             description: Option<String>,
             default: Option<StringLike>,
             required: Option<bool>,
-        ) -> Self {
-            Self {
+        ) -> PyResult<Self> {
+            if let Some(default) = &default {
+                validate_string_like(default, ALLOWED_WORKFLOW_CALL_INPUT_DEFAULT)?;
+            }
+            Ok(Self {
                 description,
                 input_type: WorkflowInputType::String { default },
                 required,
-            }
+            })
         }
 
         fn __str__(&self) -> PyResult<String> {
@@ -4013,8 +5120,9 @@ mod yamloom {
     impl WorkflowOutput {
         #[new]
         #[pyo3(signature = (value, *, description=None))]
-        fn new(value: StringLike, description: Option<String>) -> Self {
-            Self { value, description }
+        fn new(value: StringLike, description: Option<String>) -> PyResult<Self> {
+            validate_string_like(&value, ALLOWED_WORKFLOW_CALL_OUTPUT_VALUE)?;
+            Ok(Self { value, description })
         }
 
         fn __str__(&self) -> PyResult<String> {
@@ -4706,8 +5814,17 @@ mod yamloom {
             env: Option<PyMap<String, StringLike>>,
             defaults: Option<Defaults>,
             concurrency: Option<Concurrency>,
-        ) -> Self {
-            Self {
+        ) -> PyResult<Self> {
+            if let Some(run_name) = &run_name {
+                validate_string_like(run_name, ALLOWED_WORKFLOW_RUN_NAME)?;
+            }
+            if let Some(env) = &env {
+                validate_string_map(env, ALLOWED_WORKFLOW_ENV)?;
+            }
+            if let Some(concurrency) = &concurrency {
+                validate_concurrency(concurrency, ALLOWED_WORKFLOW_CONCURRENCY)?;
+            }
+            Ok(Self {
                 name,
                 run_name,
                 on,
@@ -4716,7 +5833,7 @@ mod yamloom {
                 defaults,
                 concurrency,
                 jobs,
-            }
+            })
         }
 
         #[pyo3(signature = (path, *, overwrite = true))]
