@@ -2645,6 +2645,31 @@ mod yamloom {
         Either::B(lines)
     }
 
+    /// Generate a `Step` from a list of shell commands.
+    ///
+    /// Parameters
+    /// ----------
+    /// *script
+    ///     A list of shell commands to run in sequence. These will be concatenated with newlines
+    ///     and passed as the ``run`` key of the generated step. Note that this must not exceed
+    ///     21,000 characters in total.
+    /// name
+    ///     The name of the step to display on GitHub.
+    /// condition
+    ///     A boolean expression which must be met for the step to run. Note that this represents the ``if`` key in the actual YAML file.
+    /// working_directory
+    ///     Specifies the directory in which the script is run.
+    /// shell
+    ///     Used to override the default shell settings of the runner's OS (or `Job`/`Workflow` defaults).
+    /// id
+    ///     A unique identifier for the step which can be referenced in expressions.
+    /// env
+    ///     Used to specify environment variables for the step.
+    /// continue_on_error
+    ///     Prevents the job from failing if this step fails.
+    /// timeout_minutes
+    ///     The maximum number of minutes to let the step run before GitHub automatically cancels it (defaults to 360 if not specified).
+    ///
     #[pyfunction]
     #[pyo3(signature = (*script, name = None, condition = None, working_directory = None, shell = None, id = None, env = None, continue_on_error = None, timeout_minutes= None))]
     fn script(
@@ -2745,6 +2770,38 @@ mod yamloom {
             },
         })
     }
+
+    /// Generate a `Step` from a reusable unit of code called an action.
+    ///
+    /// Parameters
+    /// ----------
+    /// name
+    ///     The name of the step to display on GitHub.
+    /// action
+    ///     The location of the action's public GitHub repository (a string of the form {owner}/{repo}).
+    /// ref
+    ///     The branch, ref, or SHA of the action's repository to use. This is used to specify a specific version of an action.
+    /// with_opts
+    ///     A map of input parameters for the action. These are passed as the ``with`` key of the generated step.
+    /// args
+    ///     The inputs for a Docker container which are passed to the container's entrypoint. This
+    ///     is a subkey of the ``with`` key of the generated step.
+    /// entrypoint
+    ///     Overrides the Docker ENTRYPOINT in the action's Dockerfile or sets one if it was not
+    ///     specified. Accepts a single string defining the executable to run (note that this is
+    ///     different from Docker's ENTRYPOINT instruction which has both a shell and exec form).
+    ///     This is a subkey of the ``with`` key of the generated step.
+    /// condition
+    ///     A boolean expression which must be met for the step to run. Note that this represents the ``if`` key in the actual YAML file.
+    /// id
+    ///     A unique identifier for the step which can be referenced in expressions.
+    /// env
+    ///     Used to specify environment variables for the step.
+    /// continue_on_error
+    ///     Prevents the job from failing if this step fails.
+    /// timeout_minutes
+    ///     The maximum number of minutes to let the step run before GitHub automatically cancels it (defaults to 360 if not specified).
+    ///
     #[pyfunction]
     #[pyo3(signature = (name, action, *, r#ref = None, with_opts = None, args = None, entrypoint = None, condition = None, id = None, env = None, continue_on_error = None, timeout_minutes = None))]
     fn action(
@@ -3424,8 +3481,59 @@ mod yamloom {
         with: Option<Hash>,
         secrets: Option<JobSecrets>,
     }
+    // TODO: support mapping syntax for snapshot argument
     #[pymethods]
     impl Job {
+        /// A set of `Step`s which runs in an isolated environemnt.
+        ///
+        /// All `Job`s in a `Workflow` run in parallel by default, but dependencies can be created
+        /// with the ``needs`` argument. `Job`s may also specify the ``uses`` argument to call
+        /// another reusable workflow rather than a set of `Step`s. Note that exactly one of ``runs_on`` or ``uses`` must be specified, and a `Job` which specifies ``uses`` may not have any ``steps``.
+        ///
+        /// Parameters
+        /// ----------
+        /// steps
+        ///     The set of `Step`s to run sequentially.
+        /// name
+        ///     The name of the job displayed in the GitHub UI.
+        /// permissions
+        ///     The permissions granted to the ``GITHUB_TOKEN`` for this job.
+        /// needs
+        ///     A list of `Job`s which must complete successfully before this job will run.
+        /// condition
+        ///     A condition which must be met for this job to run. Note that this represents the ``if`` key in the actual YAML file.
+        /// runs_on
+        ///     The type of machine on which the job will run (e.g. ``'ubuntu-latest'``)
+        /// snapshot
+        ///     Used to generate a custom image.
+        /// environment
+        ///     Used to define the environment which the job references. This is often used for trusted publishing.
+        /// concurrency
+        ///     The concurrency group for this job. Only a single `Job` or `Workflow` using the
+        ///     same concurrency group will run at a time.
+        /// outputs
+        ///     Used to create a set of outputs available to all downstream jobs which depend on this job.
+        /// env
+        ///     A map of environment variables available to all steps in the job.
+        /// defaults
+        ///     A map of default settings which apply to all steps in the job.
+        /// timeout_minutes
+        ///     The maximum number of minutes to let a job run before GitHub automatically cancels it (defaults to 360 if not specified).
+        /// strategy
+        ///     Used to create a matrix strategy for a job, generating multiple jobs from a single one based on combinations of matrix variables.
+        /// continue_on_error
+        ///     If True, this job's failure will not trigger workflow failure (or cause other matrix strategy jobs to fail if ``fail-fast`` is enabled).
+        /// container
+        ///     Used to create a container to run any steps of a job which do not already specify one.
+        /// services
+        ///     Used to host service containers for a job.
+        /// uses
+        ///     Used to specify the location and version of a reusable workflow file to run as a
+        ///     job. Such a job will not specify ``runs_on`` or ``steps``.
+        /// with_opts
+        ///     A map of inputs which are passed to a reusable workflow job specified by ``uses``. Note that this represents the ``with`` key in the actual YAML file.
+        /// secrets
+        ///     A map of secrets passed to a resulable workflow job specified by ``uses``.
         #[new]
         #[pyo3(signature = (*, steps=None, name=None, permissions=None, needs=None, condition=None, runs_on=None, snapshot=None, environment=None, concurrency=None, outputs=None, env=None, defaults=None, timeout_minutes=None, strategy=None, continue_on_error=None, container=None, services=None, uses=None, with_opts=None, secrets=None))]
         fn new(
@@ -5524,6 +5632,86 @@ mod yamloom {
     }
     #[pymethods]
     impl Events {
+        /// A set of events which may trigger a Workflow.
+        ///
+        /// Parameters
+        /// ----------
+        /// branch_protection_rule
+        ///     Triggers when the branch protection rules for the repository are changed.
+        /// check_run
+        ///     Triggers when activity related to a check run occurs.
+        /// check_suite
+        ///     Triggers when activity related to a check suite occurs.
+        /// create
+        ///     Triggers when someone creates a new branch or tag (but not if more than three tags are made at once).
+        /// delete
+        ///     Triggers when someone deletes a new branch or tag
+        /// deployment
+        ///     Triggers when a deployment is created.
+        /// deployment_status
+        ///     Triggers when a third party service provides a deployment status (unlesss deployment status's state is set to ``inactive``).
+        /// discussion
+        ///     Triggers when a discussion is created or modified.
+        /// discussion_comment
+        ///     Triggers on a comment on a discussion.
+        /// fork
+        ///     Triggers when someone forks a repository.
+        /// gollum
+        ///     Triggers when someone creates/edits a Wiki page.
+        /// image_version
+        ///     Triggers when a new version of a specified image becomes available.
+        /// issue_comment
+        ///     Triggers when an issue or pull request comment is created, edited, or deleted.
+        /// issues
+        ///     Triggers when an issue is created or modified.
+        /// label
+        ///     Triggers when a label is created or modified.
+        /// merge_group
+        ///     Triggers when a pull request is added to a merge queue which adds the pull request
+        ///     to a merge group.
+        /// milestone
+        ///     Triggers when a milestone is created or modified.
+        /// page_build
+        ///     Triggers on pushes to a branch which is the publishing source for GitHub Pages.
+        /// public
+        ///     Triggers when the repository visibility is changed from private to public.
+        /// pull_request
+        ///     Triggers on activity related to a pull request
+        /// pull_request_review
+        ///     Triggers on actions related to a pull request review.
+        /// pull_request_review_comment
+        ///     Triggers when a pull request review comment is modified.
+        /// pull_request_target
+        ///     Triggers when some activity occurs on a pull request. This runs in the context of
+        ///     the default branch of the repository rather than the context of the merge commit
+        ///     (use the ``pull_request`` argument for that).
+        /// push
+        ///     Triggers when a commit or tag is pushed (also when a repository is created from a
+        ///     template).
+        /// registry_package
+        ///     Triggers on activity related to GitHub Packages
+        /// release
+        ///     Triggers on release activity.
+        /// repository_dispatch
+        ///     Triggers when the GitHub API is useed to trigger a webhook event called
+        ///     ``repository_dispatch`` (used to trigger a workflow for activity that happens
+        ///     outside of GitHub).
+        /// schedule
+        ///     Triggers on a fixed time schedule (cronjob).
+        /// status
+        ///     Triggers when the status of a commit changes.
+        /// watch
+        ///     Triggers when the repository is starred.
+        /// workflow_call
+        ///     Triggers when the workflow is called by another workflow.
+        /// workflow_dispatch
+        ///     Allows the workflow to be triggered manually through the GitHub API, CLI, or UI.
+        /// workflow_run
+        ///     Triggers when a workflow run is requested or completed.
+        ///
+        /// Notes
+        /// -----
+        /// See `the documentation on GitHub <https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#branch_protection_rule>`_ for more details.
         #[new]
         #[pyo3(signature = (*, branch_protection_rule=None, check_run=None, check_suite=None, create=false, delete=false, deployment=false, deployment_status=false, discussion=None, discussion_comment=None, fork=false, gollum=false, image_version=None, issue_comment=None, issues=None, label=None, merge_group=None, milestone=None, page_build=false, public=false, pull_request=None, pull_request_review=None, pull_request_review_comment=None, pull_request_target=None, push=None, registry_package=None, release=None, schedule=None, status=false, watch=None, workflow_call=None, workflow_dispatch=None, workflow_run=None))]
         fn new(
@@ -5830,6 +6018,34 @@ mod yamloom {
     }
     #[pymethods]
     impl Workflow {
+        /// A configurable automated process made up of one or more jobs.
+        ///
+        /// Workflows are the primary entrypoint for ``yamloom``. Typical actions include constructing
+        /// workflows and then writing them to a file with ``Workflow.dump('path/to/file.yml')``.
+        ///
+        /// Parameters
+        /// ----------
+        /// jobs
+        ///     Jobs to run (in parallel by default).
+        /// on
+        ///     Events which may trigger the workflow.
+        /// name
+        ///     The name of the workflow.
+        /// run_name
+        ///     The name given to a particular run of the workflow.
+        /// permissions
+        ///     The default permissions granted to the ``GITHUB_TOKEN``.
+        /// env
+        ///     Global environment variables available at any step of any job in the workflow.
+        /// defaults
+        ///     Default settings which are applied to all jobs.
+        /// concurrency
+        ///     Settings to ensure only a single workflow of the given concurrency group runs at a time.
+        ///
+        /// Returns
+        /// -------
+        /// Workflow
+        ///
         #[new]
         #[pyo3(signature = (*, jobs, on, name = None, run_name = None, permissions = None, env = None, defaults = None, concurrency = None))]
         fn new(
@@ -5863,6 +6079,15 @@ mod yamloom {
             })
         }
 
+        /// Write the YAML representation of the workflow to a file.
+        ///
+        /// Parameters
+        /// ----------
+        /// path
+        ///     The path of the file to which the YAML is written.
+        /// overwrite
+        ///     If True, the file is overwritten if it already exists, otherwise nothing will happen.
+        ///
         #[pyo3(signature = (path, *, overwrite = true))]
         fn dump(&self, path: Bound<PyAny>, overwrite: bool) -> PyResult<()> {
             if let Ok(p) = path.extract::<PathBuf>() {
