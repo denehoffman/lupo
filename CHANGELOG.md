@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0](https://github.com/denehoffman/yamloom/compare/yamloom-v0.2.3...yamloom-v0.3.0) (2026-01-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* the signature for Job has been changed from Job(steps, *, *args) to Job(*, steps, *args), so this will break all scripts which construct Jobs (use keyword arguments in the future)
+
+### Features
+
+* Add context information to expressions to allow for runtime validation ([5d79381](https://github.com/denehoffman/yamloom/commit/5d7938127753cc1b17704c0fc3d2e471ba33952f))
+
+
+### Bug Fixes
+
+* Update CI script to use new kwarg for ([952e8f6](https://github.com/denehoffman/yamloom/commit/952e8f6ae96a3efeb131095f0d1969b06354a116))
+* Validate runs-on vs uses for Jobs, require steps to be kw-only ([4ef76fa](https://github.com/denehoffman/yamloom/commit/4ef76fa6aa73e4bea44e2f6fc5e144566a40abde))
+
 ## [0.2.3](https://github.com/denehoffman/yamloom/compare/yamloom-v0.2.2...yamloom-v0.2.3) (2026-01-23)
 
 
