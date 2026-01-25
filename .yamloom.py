@@ -130,7 +130,7 @@ release_workflow = Workflow(
                 script('uv pip install pytest'),
                 script('uvx ruff check'),
                 script('uvx ty check'),
-                script('uvx pytest'),
+                script('uv run pytest'),
             ],
             runs_on='ubuntu-latest',
         ),
