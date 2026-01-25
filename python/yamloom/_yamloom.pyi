@@ -160,8 +160,8 @@ class JobSecrets:
 class Job:
     def __init__(
         self,
-        steps: list[Step],
         *,
+        steps: list[Step] | None = None,
         name: Ostrlike = None,
         permissions: Permissions | None = None,
         needs: list[str] | None = None,
@@ -173,7 +173,7 @@ class Job:
         outputs: Mapping[str, StringLike] | None = None,
         env: Mapping[str, StringLike] | None = None,
         defaults: Defaults | None = None,
-        timeout_minutes: Oint = None,
+        timeout_minutes: Ointlike = None,
         strategy: Strategy | None = None,
         continue_on_error: StringOrBoolLike | None = None,
         container: Container | None = None,

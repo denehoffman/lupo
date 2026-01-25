@@ -3420,7 +3420,7 @@ mod yamloom {
         outputs: Option<PyMap<String, StringLike>>,
         env: Option<PyMap<String, StringLike>>,
         defaults: Option<Defaults>,
-        steps: Vec<Step>,
+        steps: Option<Vec<Step>>,
         timeout_minutes: Option<IntLike>,
         strategy: Option<Strategy>,
         continue_on_error: Option<Either<StringLike, BoolLike>>,
@@ -3433,9 +3433,9 @@ mod yamloom {
     #[pymethods]
     impl Job {
         #[new]
-        #[pyo3(signature = (steps, *, name=None, permissions=None, needs=None, condition=None, runs_on=None, snapshot=None, environment=None, concurrency=None, outputs=None, env=None, defaults=None, timeout_minutes=None, strategy=None, continue_on_error=None, container=None, services=None, uses=None, with_opts=None, secrets=None))]
+        #[pyo3(signature = (*, steps=None, name=None, permissions=None, needs=None, condition=None, runs_on=None, snapshot=None, environment=None, concurrency=None, outputs=None, env=None, defaults=None, timeout_minutes=None, strategy=None, continue_on_error=None, container=None, services=None, uses=None, with_opts=None, secrets=None))]
         fn new(
-            steps: Vec<Step>,
+            steps: Option<Vec<Step>>,
             name: Option<StringLike>,
             permissions: Option<Permissions>,
             needs: Option<Vec<String>>,
@@ -3456,6 +3456,37 @@ mod yamloom {
             with_opts: Option<Bound<PyDict>>,
             secrets: Option<JobSecrets>,
         ) -> PyResult<Self> {
+            match (&uses, &runs_on) {
+                (Some(_), Some(_)) => {
+                    return Err(PyValueError::new_err(
+                        "Job cannot set both 'uses' and 'runs_on'",
+                    ));
+                }
+                (None, None) => {
+                    return Err(PyValueError::new_err(
+                        "Job must set either 'uses' or 'runs_on'",
+                    ));
+                }
+                _ => {}
+            }
+            if uses.is_some() {
+                if let Some(steps) = &steps {
+                    if !steps.is_empty() {
+                        return Err(PyValueError::new_err(
+                            "Job using 'uses' cannot define 'steps'",
+                        ));
+                    }
+                }
+            } else {
+                match &steps {
+                    Some(steps) if !steps.is_empty() => {}
+                    _ => {
+                        return Err(PyValueError::new_err(
+                            "Job with 'runs_on' must define at least one step",
+                        ));
+                    }
+                }
+            }
             if let Some(name) = &name {
                 validate_string_like(name, ALLOWED_JOB_NAME)?;
             }
@@ -3478,14 +3509,15 @@ mod yamloom {
                 validate_string_map(env, ALLOWED_JOB_ENV)?;
             }
             if let Some(defaults) = &defaults
-                && let Some(run_defaults) = &defaults.run_defaults {
-                    if let Some(shell) = &run_defaults.shell {
-                        validate_string_like(shell, ALLOWED_JOB_DEFAULTS_RUN)?;
-                    }
-                    if let Some(working_directory) = &run_defaults.working_directory {
-                        validate_string_like(working_directory, ALLOWED_JOB_DEFAULTS_RUN)?;
-                    }
+                && let Some(run_defaults) = &defaults.run_defaults
+            {
+                if let Some(shell) = &run_defaults.shell {
+                    validate_string_like(shell, ALLOWED_JOB_DEFAULTS_RUN)?;
                 }
+                if let Some(working_directory) = &run_defaults.working_directory {
+                    validate_string_like(working_directory, ALLOWED_JOB_DEFAULTS_RUN)?;
+                }
+            }
             if let Some(strategy) = &strategy {
                 if let Some(fast_fail) = &strategy.fast_fail {
                     validate_bool_like(fast_fail, ALLOWED_JOB_STRATEGY)?;
@@ -3519,11 +3551,12 @@ mod yamloom {
                 validate_with_opts(with_opts, ALLOWED_JOB_WITH)?;
             }
             if let Some(secrets) = &secrets
-                && let JobSecretsOptions::Secrets(values) = &secrets.options {
-                    for (_, value) in values.iter() {
-                        validate_string_like(value, ALLOWED_JOB_SECRETS)?;
-                    }
+                && let JobSecretsOptions::Secrets(values) = &secrets.options
+            {
+                for (_, value) in values.iter() {
+                    validate_string_like(value, ALLOWED_JOB_SECRETS)?;
                 }
+            }
             Ok(Self {
                 name,
                 permissions,
@@ -3568,7 +3601,7 @@ mod yamloom {
                 out.insert_yaml_opt("defaults", defaults.maybe_as_yaml());
             }
             out.insert_yaml_opt("strategy", &self.strategy);
-            out.insert_yaml("steps", &self.steps);
+            out.insert_yaml_opt("steps", &self.steps);
             out.insert_yaml_opt("timeout-minutes", &self.timeout_minutes);
             out.insert_yaml_opt("continue-on-error", &self.continue_on_error);
             out.insert_yaml_opt("container", &self.container);

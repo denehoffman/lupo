@@ -120,7 +120,7 @@ print(
     Workflow(
         jobs={
             'check-bats-version': Job(
-                [
+                steps=[
                     action('Checkout', 'actions/checkout', ref='v5'),
                     action(
                         'Setup Node',
@@ -175,7 +175,7 @@ print(
     Workflow(
         jobs={
             'check-bats-version': Job(
-                [
+                steps=[
                     checkout(),
                     setup_node(node_version='20'),
                     script('npm install -g bats', name='Install bats'),
