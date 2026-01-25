@@ -1,8 +1,10 @@
 from __future__ import annotations
 from yamloom.actions.utils import validate_choice
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ...expressions import context, StringExpression
 from ..._yamloom import Step
 from ..._yamloom import action
 from ..types import (
@@ -17,7 +19,53 @@ from ..types import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-__all__ = ['setup_java']
+__all__ = ['setup_java', 'SetupJavaOutput']
+
+
+@dataclass(frozen=True)
+class SetupJavaOutput:
+    """Typed access to outputs produced by the setup_java step.
+
+    Parameters
+    ----------
+    id
+        The ``id`` of the setup_java step whose outputs should be referenced.
+        This should match the ``id`` passed to :func:`setup_java`.
+
+    Attributes
+    ----------
+    distribution
+        Distribution of Java that has been installed.
+    version
+        Actual version of the Java environment that has been installed.
+    path
+        Path to where the Java environment has been installed (same as
+        ``$JAVA_HOME``).
+    cache_hit
+        A boolean value to indicate if a cache was hit.
+
+    See Also
+    --------
+    GitHub repository: https://github.com/actions/setup-java
+    """
+
+    id: str
+
+    @property
+    def distribution(self) -> StringExpression:
+        return context.steps[self.id].outputs.distribution
+
+    @property
+    def version(self) -> StringExpression:
+        return context.steps[self.id].outputs.version
+
+    @property
+    def path(self) -> StringExpression:
+        return context.steps[self.id].outputs.path
+
+    @property
+    def cache_hit(self) -> StringExpression:
+        return context.steps[self.id].outputs['cache-hit']
 
 
 def setup_java(
@@ -50,6 +98,85 @@ def setup_java(
     continue_on_error: Oboollike = None,
     timeout_minutes: Ointlike = None,
 ) -> Step:
+    """Set up a specific version of the Java JDK and add tools to PATH.
+
+    Parameters
+    ----------
+    name
+        The name of the step to display on GitHub.
+    version
+        The branch, ref, or SHA of the action's repository to use.
+    java_version
+        The Java version to set up. Takes a whole or semver Java version.
+    java_version_file
+        Path to the ``.java-version`` file.
+    distribution
+        Java distribution (required).
+    java_package
+        The package type (``jdk``, ``jre``, ``jdk+fx``, ``jre+fx``).
+    architecture
+        The architecture of the package.
+    jdk_file
+        Path to where the compressed JDK is located.
+    check_latest
+        Check for the latest available version that satisfies the version spec.
+    server_id
+        ID of the distributionManagement repository in the pom.xml file.
+    server_username
+        Environment variable name for the username for authentication to the
+        Apache Maven repository.
+    server_password
+        Environment variable name for password or token for authentication to
+        the Apache Maven repository.
+    settings_path
+        Path to where the settings.xml file will be written.
+    overwrite_settings
+        Overwrite the settings.xml file if it exists.
+    gpg_private_key
+        GPG private key to import.
+    gpg_passphrase
+        Environment variable name for the GPG private key passphrase.
+    cache
+        Name of the build platform to cache dependencies (``maven``, ``gradle``,
+        ``sbt``).
+    cache_dependency_path
+        Path to a dependency file such as pom.xml, build.gradle, build.sbt, etc.
+        Supports wildcards or a list of file names for caching multiple
+        dependencies.
+    mvn_toolchain_id
+        Name of Maven Toolchain ID if the default name is not wanted.
+    mvn_toolchain_vendor
+        Name of Maven Toolchain Vendor if the default name is not wanted.
+    args
+        The inputs for a Docker container which are passed to the container's entrypoint.
+        This is a subkey of the ``with`` key of the generated step.
+    entrypoint
+        Overrides the Docker ENTRYPOINT in the action's Dockerfile or sets one if it was not
+        specified. Accepts a single string defining the executable to run (note that this is
+        different from Docker's ENTRYPOINT instruction which has both a shell and exec form).
+        This is a subkey of the ``with`` key of the generated step.
+    condition
+        A boolean expression which must be met for the step to run. Note that this represents
+        the ``if`` key in the actual YAML file.
+    id
+        A unique identifier for the step which can be referenced in expressions.
+    env
+        Used to specify environment variables for the step.
+    continue_on_error
+        Prevents the job from failing if this step fails.
+    timeout_minutes
+        The maximum number of minutes to let the step run before GitHub automatically
+        cancels it (defaults to 360 if not specified).
+
+    Returns
+    -------
+    Step
+        The generated setup-java step.
+
+    See Also
+    --------
+    GitHub repository: https://github.com/actions/setup-java
+    """
     options: dict[str, object] = {
         'java-version': java_version,
         'java-version-file': java_version_file,
@@ -69,7 +196,7 @@ def setup_java(
         'server-username': server_username,
         'server-password': server_password,
         'settings-path': settings_path,
-        'gpg-private_key': gpg_private_key,
+        'gpg-private-key': gpg_private_key,
         'gpg-passphrase': gpg_passphrase,
         'mvn-toolchain-id': mvn_toolchain_id,
         'mvn-toolchain-vendor': mvn_toolchain_vendor,

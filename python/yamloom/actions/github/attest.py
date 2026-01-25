@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ...expressions import context, StringExpression
 from ..._yamloom import Step
 from ..._yamloom import action
 from ..types import (
@@ -17,12 +19,51 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 
-__all__ = ['attest_build_provenance']
+__all__ = ['attest_build_provenance', 'AttestBuildProvenanceOutput']
+
+
+@dataclass(frozen=True)
+class AttestBuildProvenanceOutput:
+    """Typed access to outputs produced by the attest_build_provenance step.
+
+    Parameters
+    ----------
+    id
+        The ``id`` of the attest_build_provenance step whose outputs should be
+        referenced. This should match the ``id`` passed to
+        :func:`attest_build_provenance`.
+
+    Attributes
+    ----------
+    bundle_path
+        The path to the file containing the attestation bundle.
+    attestation_id
+        The ID of the attestation.
+    attestation_url
+        The URL for the attestation summary.
+
+    See Also
+    --------
+    GitHub repository: https://github.com/actions/attest-build-provenance
+    """
+
+    id: str
+
+    @property
+    def bundle_path(self) -> StringExpression:
+        return context.steps[self.id].outputs['bundle-path']
+
+    @property
+    def attestation_id(self) -> StringExpression:
+        return context.steps[self.id].outputs['attestation-id']
+
+    @property
+    def attestation_url(self) -> StringExpression:
+        return context.steps[self.id].outputs['attestation-url']
 
 
 def attest_build_provenance(
     *,
-    path: StringLike,
     name: Ostrlike = None,
     version: str = 'v3',
     subject_path: Ostrlike = None,
@@ -41,6 +82,73 @@ def attest_build_provenance(
     continue_on_error: Oboollike = None,
     timeout_minutes: Ointlike = None,
 ) -> Step:
+    """Generate provenance attestations for build artifacts.
+
+    Parameters
+    ----------
+    name
+        The name of the step to display on GitHub.
+    version
+        The branch, ref, or SHA of the action's repository to use.
+    subject_path
+        Path to the artifact serving as the subject of the attestation. Must
+        specify exactly one of ``subject_path``, ``subject_digest``, or
+        ``subject_checksums``. May contain a glob pattern or list of paths (total
+        subject count cannot exceed 1024).
+    subject_digest
+        Digest of the subject for which provenance will be generated. Must be in
+        the form ``algorithm:hex_digest`` (e.g. ``sha256:abc123...``). Must specify
+        exactly one of ``subject_path``, ``subject_digest``, or
+        ``subject_checksums``.
+    subject_name
+        Subject name as it should appear in the attestation. Required when
+        identifying the subject with ``subject_digest``.
+    subject_checksums
+        Path to checksums file containing digest and name of subjects for
+        attestation. Must specify exactly one of ``subject_path``,
+        ``subject_digest``, or ``subject_checksums``.
+    push_to_registry
+        Whether to push the provenance statement to the image registry. Requires
+        that ``subject_name`` specify the fully-qualified image name and that
+        ``subject_digest`` be specified. Defaults to false.
+    create_storage_record
+        Whether to create a storage record for the artifact. Requires that
+        ``push_to_registry`` is set to true. Defaults to true.
+    show_summary
+        Whether to attach a list of generated attestations to the workflow run
+        summary page. Defaults to true.
+    github_token
+        The GitHub token used to make authenticated API requests.
+    args
+        The inputs for a Docker container which are passed to the container's entrypoint.
+        This is a subkey of the ``with`` key of the generated step.
+    entrypoint
+        Overrides the Docker ENTRYPOINT in the action's Dockerfile or sets one if it was not
+        specified. Accepts a single string defining the executable to run (note that this is
+        different from Docker's ENTRYPOINT instruction which has both a shell and exec form).
+        This is a subkey of the ``with`` key of the generated step.
+    condition
+        A boolean expression which must be met for the step to run. Note that this represents
+        the ``if`` key in the actual YAML file.
+    id
+        A unique identifier for the step which can be referenced in expressions.
+    env
+        Used to specify environment variables for the step.
+    continue_on_error
+        Prevents the job from failing if this step fails.
+    timeout_minutes
+        The maximum number of minutes to let the step run before GitHub automatically
+        cancels it (defaults to 360 if not specified).
+
+    Returns
+    -------
+    Step
+        The generated attest build provenance step.
+
+    See Also
+    --------
+    GitHub repository: https://github.com/actions/attest-build-provenance
+    """
     if (
         sum(
             value is not None

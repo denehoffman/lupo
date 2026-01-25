@@ -82,6 +82,155 @@ def codecov(
     continue_on_error: Oboollike = None,
     timeout_minutes: Ointlike = None,
 ) -> Step:
+    """Upload coverage reports to Codecov.
+
+    Parameters
+    ----------
+    name
+        The name of the step to display on GitHub.
+    version
+        The branch, ref, or SHA of the action's repository to use.
+    base_sha
+        The base SHA to select. Only used in the ``pr-base-picking`` run command.
+    binary
+        The file location of a pre-downloaded version of the CLI. If specified,
+        integrity checking will be bypassed.
+    codecov_yml_path
+        The location of the codecov.yml file. This is currently only used for
+        automated test selection.
+    commit_parent
+        SHA (with 40 chars) of what should be the parent of this commit.
+    directory
+        Folder to search for coverage files. Defaults to the current working
+        directory.
+    disable_file_fixes
+        Disable file fixes to ignore common lines from coverage.
+    disable_search
+        Disable search for coverage files.
+    disable_safe_directory
+        Disable setting safe directory. Set to true to disable.
+    disable_telem
+        Disable sending telemetry data to Codecov. Set to true to disable.
+    dry_run
+        Do not upload files to Codecov.
+    env_vars
+        Environment variables to tag the upload with (e.g. ``PYTHON`` or
+        ``OS,PYTHON``).
+    exclude
+        Comma-separated list of folders to exclude from search.
+    fail_ci_if_error
+        On error, exit with non-zero code.
+    files
+        Comma-separated list of explicit files to upload. These will be added to
+        coverage files found for upload. Use ``disable_search`` to upload only
+        the specified files.
+    flags
+        Comma-separated list of flags to upload to group coverage metrics.
+    force
+        Only used for the ``empty-upload`` run command.
+    git_service
+        Override the git_service (e.g. ``github_enterprise``).
+    gcov_args
+        Extra arguments to pass to gcov.
+    gcov_executable
+        gcov executable to run. Defaults to ``gcov``.
+    gcov_ignore
+        Paths to ignore during gcov gathering.
+    gcov_include
+        Paths to include during gcov gathering.
+    handle_no_reports_found
+        If no coverage reports are found, do not raise an exception.
+    job_code
+        Codecov job code.
+    codecov_name
+        Custom defined name of the upload. Visible in the Codecov UI.
+    network_filter
+        Filter files listed in the network section of the Codecov report. Only
+        files whose path begin with the specified filter are included.
+    network_prefix
+        Prefix on files listed in the network section of the Codecov report.
+    os
+        Override the assumed OS. Options available at cli.codecov.io.
+    override_branch
+        Specify the branch to be displayed with this commit on Codecov.
+    override_build
+        Specify the build number manually.
+    override_build_url
+        The URL of the build where this is running.
+    override_commit
+        Commit SHA (with 40 chars).
+    override_pr
+        Specify the pull request number manually. Used to override pre-existing
+        CI environment variables.
+    plugins
+        Comma-separated list of plugins to run. Specify ``noop`` to turn off all
+        plugins.
+    recurse_submodules
+        Whether to enumerate files inside of submodules for path-fixing purposes.
+    report_code
+        The code of the report if using local upload.
+    report_type
+        The type of file to upload. Possible values are ``test_results`` and
+        ``coverage``.
+    root_dir
+        Root folder from which to consider paths on the network section.
+    run_command
+        Choose which CLI command to run. Options are ``upload-coverage``,
+        ``empty-upload``, ``pr-base-picking``, and ``send-notifications``.
+    skip_validation
+        Skip integrity checking of the CLI. This is not recommended.
+    slug
+        Required when using the org token. Set to the owner/repo slug used
+        instead of the private repo token.
+    swift_project
+        Specify the swift project name. Useful for optimization.
+    token
+        Repository Codecov token. Used to authorize report uploads.
+    url
+        Set to the Codecov instance URL. Used by Dedicated Enterprise Cloud
+        customers.
+    use_legacy_upload_endpoint
+        Use the legacy upload endpoint.
+    use_oidc
+        Use OIDC instead of token. This will ignore any token supplied.
+    use_pypi
+        Use the PyPI version of the CLI instead of from cli.codecov.io.
+    verbose
+        Enable verbose logging.
+    codecov_version
+        Which version of the Codecov CLI to use (defaults to ``latest``).
+    working_directory
+        Directory in which to execute codecov.sh.
+    args
+        The inputs for a Docker container which are passed to the container's entrypoint.
+        This is a subkey of the ``with`` key of the generated step.
+    entrypoint
+        Overrides the Docker ENTRYPOINT in the action's Dockerfile or sets one if it was not
+        specified. Accepts a single string defining the executable to run (note that this is
+        different from Docker's ENTRYPOINT instruction which has both a shell and exec form).
+        This is a subkey of the ``with`` key of the generated step.
+    condition
+        A boolean expression which must be met for the step to run. Note that this represents
+        the ``if`` key in the actual YAML file.
+    id
+        A unique identifier for the step which can be referenced in expressions.
+    env
+        Used to specify environment variables for the step.
+    continue_on_error
+        Prevents the job from failing if this step fails.
+    timeout_minutes
+        The maximum number of minutes to let the step run before GitHub automatically
+        cancels it (defaults to 360 if not specified).
+
+    Returns
+    -------
+    Step
+        The generated codecov step.
+
+    See Also
+    --------
+    GitHub repository: https://github.com/codecov/codecov-action
+    """
     options: dict[str, object] = {
         'base_sha': base_sha,
         'binary': binary,

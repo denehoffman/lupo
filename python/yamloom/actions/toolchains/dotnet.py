@@ -1,8 +1,10 @@
 from __future__ import annotations
 from yamloom.actions.utils import validate_choice
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ...expressions import context, StringExpression
 from ..._yamloom import Step
 from ..._yamloom import action
 from ..types import (
@@ -17,7 +19,40 @@ from ..types import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-__all__ = ['setup_dotnet']
+__all__ = ['setup_dotnet', 'SetupDotnetOutput']
+
+
+@dataclass(frozen=True)
+class SetupDotnetOutput:
+    """Typed access to outputs produced by the setup_dotnet step.
+
+    Parameters
+    ----------
+    id
+        The ``id`` of the setup_dotnet step whose outputs should be referenced.
+        This should match the ``id`` passed to :func:`setup_dotnet`.
+
+    Attributes
+    ----------
+    cache_hit
+        A boolean value to indicate if a cache was hit.
+    dotnet_version
+        The installed .NET SDK version.
+
+    See Also
+    --------
+    GitHub repository: https://github.com/actions/setup-dotnet
+    """
+
+    id: str
+
+    @property
+    def cache_hit(self) -> StringExpression:
+        return context.steps[self.id].outputs['cache-hit']
+
+    @property
+    def dotnet_version(self) -> StringExpression:
+        return context.steps[self.id].outputs['dotnet-version']
 
 
 def setup_dotnet(
@@ -40,6 +75,67 @@ def setup_dotnet(
     continue_on_error: Oboollike = None,
     timeout_minutes: Ointlike = None,
 ) -> Step:
+    """Set up a specific version of the .NET SDK and optional NuGet auth.
+
+    Parameters
+    ----------
+    name
+        The name of the step to display on GitHub.
+    version
+        The branch, ref, or SHA of the action's repository to use.
+    dotnet_version
+        Optional SDK version(s) to use. Examples: ``2.2.104``, ``3.1``, ``3.1.x``,
+        ``3.x``, ``6.0.2xx``.
+    dotnet_quality
+        Optional quality of the build. Possible values are ``daily``, ``signed``,
+        ``validated``, ``preview``, and ``ga``.
+    global_json_file
+        Optional global.json location, if your global.json isn't located in the
+        root of the repo.
+    source_url
+        Optional package source for which to set up authentication.
+    owner
+        Optional owner for using packages from GitHub Package Registry
+        organizations/users other than the current repository's owner. Only used
+        if a GPR URL is also provided in ``source_url``.
+    config_file
+        Optional NuGet.config location, if your NuGet.config isn't located in the
+        root of the repo.
+    cache
+        Enable caching of the NuGet global-packages folder.
+    cache_dependency_path
+        Path to a dependency file such as ``packages.lock.json``. Supports
+        wildcards or a list of file names for caching multiple dependencies.
+    args
+        The inputs for a Docker container which are passed to the container's entrypoint.
+        This is a subkey of the ``with`` key of the generated step.
+    entrypoint
+        Overrides the Docker ENTRYPOINT in the action's Dockerfile or sets one if it was not
+        specified. Accepts a single string defining the executable to run (note that this is
+        different from Docker's ENTRYPOINT instruction which has both a shell and exec form).
+        This is a subkey of the ``with`` key of the generated step.
+    condition
+        A boolean expression which must be met for the step to run. Note that this represents
+        the ``if`` key in the actual YAML file.
+    id
+        A unique identifier for the step which can be referenced in expressions.
+    env
+        Used to specify environment variables for the step.
+    continue_on_error
+        Prevents the job from failing if this step fails.
+    timeout_minutes
+        The maximum number of minutes to let the step run before GitHub automatically
+        cancels it (defaults to 360 if not specified).
+
+    Returns
+    -------
+    Step
+        The generated setup-dotnet step.
+
+    See Also
+    --------
+    GitHub repository: https://github.com/actions/setup-dotnet
+    """
     options: dict[str, object] = {
         'dotnet-version': dotnet_version,
         'dotnet-quality': validate_choice(

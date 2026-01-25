@@ -1,8 +1,10 @@
 from __future__ import annotations
 from yamloom.actions.utils import validate_choice, check_string
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ...expressions import context, StringExpression
 from ..._yamloom import Step
 from ..._yamloom import action
 from ..types import (
@@ -17,7 +19,34 @@ from ..types import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-__all__ = ['setup_mpi']
+__all__ = ['setup_mpi', 'SetupMpiOutput']
+
+
+@dataclass(frozen=True)
+class SetupMpiOutput:
+    """Typed access to outputs produced by the setup_mpi step.
+
+    Parameters
+    ----------
+    id
+        The ``id`` of the setup_mpi step whose outputs should be referenced.
+        This should match the ``id`` passed to :func:`setup_mpi`.
+
+    Attributes
+    ----------
+    mpi
+        The installed MPI implementation name.
+
+    See Also
+    --------
+    GitHub repository: https://github.com/mpi4py/setup-mpi
+    """
+
+    id: str
+
+    @property
+    def mpi(self) -> StringExpression:
+        return context.steps[self.id].outputs.mpi
 
 
 def setup_mpi(
@@ -33,6 +62,46 @@ def setup_mpi(
     continue_on_error: Oboollike = None,
     timeout_minutes: Ointlike = None,
 ) -> Step:
+    """Set up a specific MPI implementation.
+
+    Parameters
+    ----------
+    name
+        The name of the step to display on GitHub.
+    version
+        The branch, ref, or SHA of the action's repository to use.
+    mpi
+        MPI implementation name.
+    args
+        The inputs for a Docker container which are passed to the container's entrypoint.
+        This is a subkey of the ``with`` key of the generated step.
+    entrypoint
+        Overrides the Docker ENTRYPOINT in the action's Dockerfile or sets one if it was not
+        specified. Accepts a single string defining the executable to run (note that this is
+        different from Docker's ENTRYPOINT instruction which has both a shell and exec form).
+        This is a subkey of the ``with`` key of the generated step.
+    condition
+        A boolean expression which must be met for the step to run. Note that this represents
+        the ``if`` key in the actual YAML file.
+    id
+        A unique identifier for the step which can be referenced in expressions.
+    env
+        Used to specify environment variables for the step.
+    continue_on_error
+        Prevents the job from failing if this step fails.
+    timeout_minutes
+        The maximum number of minutes to let the step run before GitHub automatically
+        cancels it (defaults to 360 if not specified).
+
+    Returns
+    -------
+    Step
+        The generated setup-mpi step.
+
+    See Also
+    --------
+    GitHub repository: https://github.com/mpi4py/setup-mpi
+    """
     options: dict[str, object] = {
         'mpi': validate_choice('mpi', mpi, ['mpich', 'openmpi', 'intelmpi', 'msmpi']),
     }
