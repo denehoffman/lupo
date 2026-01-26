@@ -249,6 +249,11 @@ uv tool install prek
 prek install
 ```
 
+## Third-party notices
+
+This project vendors the GitHub Actions workflow JSON schema from JSON Schema Store (Apache-2.0).
+See `schemas/NOTICE` and `schemas/LICENSE` for attribution and license text.
+
 ## Why Rust?
 
 This could have been implemented in pure Python (the original draft was), I'll admit, but if you've ever worked with YAML you'll know that the Python libraries for it are awful (mostly because YAML itself is awful). Rust has a nice YAML crate, and it helps to use strict enums for YAML fields rather than the optional type hints in Python. Also, the trait structure is much better than the amount of subclassing I was doing in my original Python code. The error handling is also much easier to implement, rather than having a mess of validators or some pyndantic models for everything. I have plans to make this a more robust tool, so Rust will eventually come in handy there as well. That being said, using a compiled language for a string-building library is maybe a bit overkill, but here we are.

@@ -38,6 +38,10 @@ yamloom = "yamloom.__main__:main"
 [tool.maturin]
 python-source = "python"
 module-name = "yamloom._yamloom"
+include = [
+    { path = "schemas/NOTICE", format = ["sdist", "wheel"] },
+    { path = "schemas/LICENSE", format = ["sdist", "wheel"] }
+]
 
 
 [tool.ruff.format]

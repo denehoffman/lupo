@@ -438,7 +438,7 @@ mod yamloom {
         types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple},
     };
     use yaml_rust2::{
-        Yaml, YamlLoader,
+        Yaml,
         yaml::{Array, Hash},
     };
 
@@ -6086,10 +6086,8 @@ mod yamloom {
         /// Run validation against the schemastore JSON schema for GitHub Workflows and raise a
         /// RuntimeError if validation fails.
         fn validate(&self) -> PyResult<()> {
-            let workflow_str = self.as_yaml_string()?;
-            let workflow_yaml_obj = YamlLoader::load_from_str(&workflow_str)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-            let workflow_json = yaml_to_json(&workflow_yaml_obj[0])?;
+            let workflow_yaml = self.as_yaml();
+            let workflow_json = yaml_to_json(&workflow_yaml)?;
             WORKFLOW_SCHEMA
                 .validate(&workflow_json)
                 .map_err(|e| PyRuntimeError::new_err(e.to_string()))
@@ -6152,7 +6150,13 @@ mod yamloom {
 fn yaml_to_json(yaml: &Yaml) -> PyResult<Value> {
     Ok(match yaml {
         Yaml::Real(v) => {
-            Value::Number(Number::from_str(v).map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
+            if v.contains("${{") && v.contains("}}") {
+                Value::String(v.clone())
+            } else {
+                Value::Number(
+                    Number::from_str(v).map_err(|e| PyRuntimeError::new_err(e.to_string()))?,
+                )
+            }
         }
         Yaml::Integer(v) => Value::Number(Number::from(*v)),
         Yaml::String(s) => Value::String(s.clone()),
