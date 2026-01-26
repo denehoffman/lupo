@@ -66,21 +66,9 @@ def create_build_job(
             entry['python_arch'] = python_arch
         return entry
 
-    extra_arch_deps = (
-        [
-            script(
-                'sudo apt update',
-                'sudo apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross linux-libc-dev-arm64-cross',
-            )
-        ]
-        if name == 'linux'
-        else []
-    )
-
     return Job(
         steps=[
             checkout(),
-            *extra_arch_deps,
             script(
                 f'printf "%s\n" {context.matrix.platform.python_versions.as_array().join(" ")} >> version.txt',
             ),
@@ -114,9 +102,6 @@ def create_build_job(
         needs=needs,
         condition=context.github.ref.startswith('refs/tags/')
         | (context.github.event_name == 'workflow_dispatch'),
-        env={'CFLAGS_aarch64_unknown_linux_gnu': '-D__ARM_ARCH=8'}
-        if name == 'linux'
-        else None,
     )
 
 

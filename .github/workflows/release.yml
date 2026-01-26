@@ -40,8 +40,6 @@ jobs:
       - build-test-check
     if: ${{ (startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch')) }}
     runs-on: ${{ matrix.platform.runner }}
-    env:
-      CFLAGS_aarch64_unknown_linux_gnu: "-D__ARM_ARCH=8"
     strategy:
       matrix:
         platform:
@@ -121,9 +119,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
-      - run: |-
-          sudo apt update
-          sudo apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross linux-libc-dev-arm64-cross
       - run: printf "%s\n" ${{ join(matrix.platform.python_versions, ' ') }} >> version.txt
       - name: Setup Python
         uses: actions/setup-python@v6
