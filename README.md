@@ -26,22 +26,24 @@ class Workflow:
         defaults: Defaults | None = None,
         concurrency: Concurrency | None = None,
     ) -> None: ...
-    def dump(self, path: Path | str, *, overwrite: bool = True) -> None: ...
+    def dump(
+        self, path: Path | str, *, overwrite: bool = True, validate: bool = True
+    ) -> None: ...
 ```
 
-Every part of the constructor represents a key in a workflow file, and the `dump` method will write formatted YAML to a given path. Jobs are given as a `dict` of `Job` objects:
+Every part of the constructor represents a key in a workflow file, and the `dump` method will write formatted YAML to a given path. The `validate` kwarg checks the produced YAML against the GitHub Actions workflow [JSON schema from SchemaStore](https://www.schemastore.org/github-workflow.json). Jobs are given as a `dict` of `Job` objects:
 
 ```python
 class Job:
     def __init__(
         self,
-        steps: Sequence[Step],
         *,
+        steps: list[Step] | None = None,
         name: str | StringExpression | None = None,
         permissions: Permissions | None = None,
-        needs: Sequence[str] | None = None,
-        condition: bool | BooleanExpression | None = None,
-        runs_on: RunsOnSpec | Sequence[str | StringExpression] | str | StringExpression | None = None,
+        needs: list[str] | None = None,
+        condition: str | BooleanExpression | None = None,
+        runs_on: RunsOnSpec | list[str | StringExpression] | str | StringExpression | None = None,
         snapshot: str | None = None,
         environment: Environment | None = None,
         concurrency: Concurrency | None = None,
@@ -50,7 +52,7 @@ class Job:
         defaults: Defaults | None = None,
         timeout_minutes: int | None = None,
         strategy: Strategy | None = None,
-        continue_on_error: str | bool | BooleanExpression | None = None,
+        continue_on_error: str | bool | StringExpression | BooleanExpression | None = None,
         container: Container | None = None,
         services: Mapping[str, Container] | None = None,
         uses: str | None = None,
@@ -65,7 +67,7 @@ Note that some of the type hints refer to "Expressions" (more on this later). Fu
 def script(
     *script: str | StringExpression,
     name: str | StringExpression | None = None,
-    condition: str | bool | None = None,
+    condition: str | BooleanExpression | None = None,
     working_directory: str | StringExpression | None = None,
     shell: str | None = None,
     id: str | None = None,
@@ -75,16 +77,14 @@ def script(
 ) -> Step: ...
 
 def action(
-    name: str | StringExpression,
+    name: str | StringExpression | None,
     action: str,
     *,
     ref: str | None = None,
     with_opts: Mapping | None = None,
     args: str | StringExpression | None= None,
     entrypoint: str | StringExpression | None = None,
-    condition: str | bool | None = None,
-    working_directory: str | StringExpression | None = None,
-    shell: str | None = None,
+    condition: str | BooleanExpression | None = None,
     id: str | None = None,
     env: Mapping[str, str | StringExpression] | None = None,
     continue_on_error: bool | BooleanExpression | None= None,
