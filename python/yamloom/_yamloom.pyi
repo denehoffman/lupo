@@ -56,6 +56,7 @@ def script(
     shell: Ostr = None,
     id: Ostr = None,  # noqa: A002
     env: Mapping[str, StringLike] | None = None,
+    permissions: Permissions | None = None,
     continue_on_error: Oboollike = None,
     timeout_minutes: Ointlike = None,
 ) -> Step: ...

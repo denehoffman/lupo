@@ -2664,13 +2664,16 @@ mod yamloom {
     ///     A unique identifier for the step which can be referenced in expressions.
     /// env
     ///     Used to specify environment variables for the step.
+    /// permissions
+    ///     Recommended permissions required to run this script. These are merged into the
+    ///     job permissions when ``use_recommended_permissions`` is True.
     /// continue_on_error
     ///     Prevents the job from failing if this step fails.
     /// timeout_minutes
     ///     The maximum number of minutes to let the step run before GitHub automatically cancels it (defaults to 360 if not specified).
     ///
     #[pyfunction]
-    #[pyo3(signature = (*script, name = None, condition = None, working_directory = None, shell = None, id = None, env = None, continue_on_error = None, timeout_minutes= None))]
+    #[pyo3(signature = (*script, name = None, condition = None, working_directory = None, shell = None, id = None, env = None, permissions = None, continue_on_error = None, timeout_minutes= None))]
     fn script(
         script: &Bound<'_, PyTuple>,
         name: Option<StringLike>,
@@ -2679,6 +2682,7 @@ mod yamloom {
         shell: Option<String>,
         id: Option<String>,
         env: Option<PyMap<String, StringLike>>,
+        permissions: Option<Permissions>,
         continue_on_error: Option<BoolLike>,
         timeout_minutes: Option<IntLike>,
     ) -> PyResult<Step> {
@@ -2710,7 +2714,7 @@ mod yamloom {
                 continue_on_error,
                 timeout_minutes,
             },
-            recommended_permissions: None,
+            recommended_permissions: permissions,
             skip_recommended_permissions: false,
         })
     }

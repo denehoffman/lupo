@@ -77,3 +77,29 @@ def test_job_skips_recommended_permissions_when_opted_out() -> None:
         runs_on='ubuntu-latest',
     )
     assert '\npermissions:\n' not in str(job)
+
+
+def test_job_merges_user_and_recommended_permissions() -> None:
+    job = Job(
+        steps=[
+            action(
+                'oidc',
+                'actions/checkout',
+                recommended_permissions=Permissions(id_token='write'),
+            )
+        ],
+        permissions=Permissions(contents='read'),
+        runs_on='ubuntu-latest',
+    )
+    job_yaml = str(job)
+    assert '\npermissions:\n' in job_yaml
+    assert 'contents: read' in job_yaml
+    assert 'id-token: write' in job_yaml
+
+
+def test_script_permissions_merge_like_recommended_permissions() -> None:
+    job = Job(
+        steps=[script('echo hi', permissions=Permissions(contents='read'))],
+        runs_on='ubuntu-latest',
+    )
+    assert '\npermissions:\n  contents: read\n' in str(job)

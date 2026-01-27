@@ -112,7 +112,6 @@ release_workflow = Workflow(
         pull_request=PullRequestEvent(),
         workflow_dispatch=WorkflowDispatchEvent(),
     ),
-    permissions=Permissions(contents='read'),
     jobs={
         'build-test-check': Job(
             steps=[
@@ -220,6 +219,7 @@ release_workflow = Workflow(
                 SetupUV(),
                 script(
                     'uv publish --trusted-publishing always wheels-*/*',
+                    permissions=Permissions(id_token='write', contents='write'),
                 ),
             ],
             name='Release',
@@ -227,7 +227,6 @@ release_workflow = Workflow(
             condition=context.github.ref.startswith('refs/tags/')
             | (context.github.event_name == 'workflow_dispatch'),
             needs=['linux', 'musllinux', 'windows', 'macos', 'sdist'],
-            permissions=Permissions(id_token='write', contents='write'),
             environment=Environment('pypi'),
         ),
     },
@@ -240,7 +239,6 @@ version_workflow = Workflow(
             branches=['main'],
         ),
     ),
-    permissions=Permissions(contents='write', issues='write', pull_requests='write'),
     jobs={
         'release-please': Job(
             steps=[

@@ -62,7 +62,7 @@ class Job:
     ) -> None: ...
 ```
 
-When ``use_recommended_permissions`` is True, job permissions are merged with any recommended permissions provided by steps.
+When ``use_recommended_permissions`` is True, job permissions are merged with any recommended permissions provided by steps (neither side overwrites the other; the merge keeps the most permissive value per scope).
 
 Note that some of the type hints refer to "Expressions" (more on this later). Furthermore, `Jobs` contain a sequence of `Step` objects, which cannot be constructed directly but instead are formed from either scripts or actions:
 
@@ -75,6 +75,7 @@ def script(
     shell: str | None = None,
     id: str | None = None,
     env: Mapping[str, str | StringExpression] | None = None,
+    permissions: Permissions | None = None,
     continue_on_error: bool | BooleanExpression | None = None,
     timeout_minutes: int | NumberExpression | None = None,
 ) -> Step: ...
