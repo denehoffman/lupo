@@ -1,11 +1,10 @@
 from yamloom.actions.toolchains.rust import SetupRust
-from dataclasses import dataclass
-from yamloom.actions.github.artifacts import DownloadArtifact, UploadArtifact
+from yamloom.actions.github.artifacts import DownloadArtifact
 from yamloom.actions.github.release import ReleasePlease
-from yamloom.actions.packaging.python import Maturin
-from yamloom.actions.toolchains.python import SetupPython, SetupUV
+from yamloom.actions.toolchains.python import SetupUV
 from yamloom.actions.github.scm import Checkout
 from yamloom.expressions import context
+from yamloom.workflows.maturin import MaturinBuildSuite
 from yamloom import (
     Workflow,
     Events,
@@ -14,95 +13,21 @@ from yamloom import (
     WorkflowDispatchEvent,
     Permissions,
     Job,
-    Matrix,
-    Strategy,
     script,
     Environment,
+    sync,
 )
 
 
-@dataclass
-class Target:
-    runner: str
-    target: str
-    skip_python_versions: list[str] | None = None
-
-
-DEFAULT_PYTHON_VERSIONS = [
-    '3.9',
-    '3.10',
-    '3.11',
-    '3.12',
-    '3.13',
-    '3.13t',
-    '3.14',
-    '3.14t',
-    'pypy3.11',
-]
-
-
-def resolve_python_versions(skip: list[str] | None) -> list[str]:
-    if not skip:
-        return DEFAULT_PYTHON_VERSIONS
-    skipped = set(skip)
-    return [version for version in DEFAULT_PYTHON_VERSIONS if version not in skipped]
-
-
-def create_build_job(
-    job_name: str, name: str, targets: list[Target], *, needs: list[str]
-) -> Job:
-    def platform_entry(target: Target) -> dict[str, object]:
-        entry = {
-            'runner': target.runner,
-            'target': target.target,
-            'python_versions': resolve_python_versions(target.skip_python_versions),
-        }
-        python_arch = (
-            ('arm64' if target.target == 'aarch64' else target.target)
-            if name == 'windows'
-            else None
-        )
-        if python_arch is not None:
-            entry['python_arch'] = python_arch
-        return entry
-
-    return Job(
-        steps=[
-            Checkout(),
-            script(
-                f'printf "%s\n" {context.matrix.platform.python_versions.as_array().join(" ")} >> version.txt',
-            ),
-            SetupPython(
-                python_version_file='version.txt',
-                architecture=context.matrix.platform.python_arch.as_str()
-                if name == 'windows'
-                else None,
-            ),
-            Maturin(
-                name='Build wheels',
-                target=context.matrix.platform.target.as_str(),
-                args=f'--release --out dist --interpreter {context.matrix.platform.python_versions.as_array().join(" ")}',
-                sccache=~context.github.ref.startswith('refs/tags/'),
-                manylinux='musllinux_1_2'
-                if name == 'musllinux'
-                else ('auto' if name == 'linux' else None),
-            ),
-            UploadArtifact(
-                path='dist',
-                artifact_name=f'wheels-{name}-{context.matrix.platform.target}',
-            ),
-        ],
-        runs_on=context.matrix.platform.runner.as_str(),
-        strategy=Strategy(
-            fast_fail=False,
-            matrix=Matrix(
-                platform=[platform_entry(target) for target in targets],
-            ),
-        ),
-        needs=needs,
-        condition=context.github.ref.startswith('refs/tags/')
-        | (context.github.event_name == 'workflow_dispatch'),
-    )
+build_condition = context.github.ref.startswith('refs/tags/') | (
+    context.github.event_name == 'workflow_dispatch'
+)
+build_jobs = MaturinBuildSuite(
+    python_profile='all',
+    needs=['build-test-check'],
+    condition=build_condition,
+    sccache=~context.github.ref.startswith('refs/tags/'),
+).jobs()
 
 
 release_workflow = Workflow(
@@ -133,86 +58,7 @@ release_workflow = Workflow(
             ],
             runs_on='ubuntu-latest',
         ),
-        'linux': create_build_job(
-            'Build Linux Wheels',
-            'linux',
-            [
-                Target(
-                    'ubuntu-22.04',
-                    target,
-                )
-                for target in [
-                    'x86_64',
-                    'x86',
-                    'aarch64',
-                    'armv7',
-                    's390x',
-                    'ppc64le',
-                ]
-            ],
-            needs=['build-test-check'],
-        ),
-        'musllinux': create_build_job(
-            'Build (musl) Linux Wheels',
-            'musllinux',
-            [
-                Target(
-                    'ubuntu-22.04',
-                    target,
-                )
-                for target in [
-                    'x86_64',
-                    'x86',
-                    'aarch64',
-                    'armv7',
-                ]
-            ],
-            needs=['build-test-check'],
-        ),
-        'windows': create_build_job(
-            'Build Windows Wheels',
-            'windows',
-            [
-                Target(
-                    'windows-latest',
-                    'x64',
-                ),
-                Target('windows-latest', 'x86', ['pypy3.11']),
-                Target(
-                    'windows-11-arm',
-                    'aarch64',
-                    ['3.9', '3.10', '3.11', '3.13t', '3.14t', 'pypy3.11'],
-                ),
-            ],
-            needs=['build-test-check'],
-        ),
-        'macos': create_build_job(
-            'Build macOS Wheels',
-            'macos',
-            [
-                Target(
-                    'macos-15-intel',
-                    'x86_64',
-                ),
-                Target(
-                    'macos-latest',
-                    'aarch64',
-                ),
-            ],
-            needs=['build-test-check'],
-        ),
-        'sdist': Job(
-            steps=[
-                Checkout(),
-                Maturin(name='Build sdist', command='sdist', args='--out dist'),
-                UploadArtifact(path='dist', artifact_name='wheels-sdist'),
-            ],
-            name='Build Source Distribution',
-            runs_on='ubuntu-22.04',
-            needs=['build-test-check'],
-            condition=context.github.ref.startswith('refs/tags/')
-            | (context.github.event_name == 'workflow_dispatch'),
-        ),
+        **build_jobs,
         'release': Job(
             steps=[
                 DownloadArtifact(),
@@ -255,5 +101,9 @@ version_workflow = Workflow(
 
 
 if __name__ == '__main__':
-    release_workflow.dump('.github/workflows/release.yml')
-    version_workflow.dump('.github/workflows/release-please.yml')
+    sync(
+        {
+            'release.yml': release_workflow,
+            'release-please.yml': version_workflow,
+        }
+    )

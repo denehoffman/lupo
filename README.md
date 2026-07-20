@@ -217,7 +217,20 @@ To implement a custom action, define a class that subclasses ``ActionStep`` and 
 
 ## CLI Usage
 
-You can create a workflow generator script (defaults to `$YAMLOOM_FILE`, `.yamloom.py`, or `yamloom.py` in this resolution order) and run it with:
+Create a workflow generator script (resolved from `--file`, `$YAMLOOM_FILE`,
+`.yamloom.py`, or `yamloom.py`) which declares its complete owned workflow set:
+
+```python
+from yamloom import sync
+
+release = Workflow(...)
+checks = Workflow(...)
+
+if __name__ == '__main__':
+    sync({'release.yml': release, 'checks.yml': checks})
+```
+
+Then synchronize it with:
 
 ```bash
 yamloom
@@ -226,31 +239,45 @@ yamloom
 You can also point to a specific script:
 
 ```bash
-yamloom --file path/to/workflow_builder.py
+yamloom sync --file path/to/workflow_builder.py
 ```
 
-This script should have the form
+Generated workflows carry a source-specific ownership header. `sync` rewrites changed files and
+removes only stale files carrying the same header; manual workflows and files owned by another
+generator are preserved. To check without changing the worktree, use:
 
-```python
-workflow1 = Workflow(...).dump('.github/workflows/workflow1.yml')
-workflow2 = Workflow(...).dump('.github/workflows/workflow2.yml')
-...
+```bash
+yamloom check
 ```
 
-Right now, the script and associated pre-commit hook just run the Python file at the given path, but I have some eventual plans to add to the functionality of the `yamloom` command.
+Existing YAML can be converted into a structurally equivalent generator. Recognized built-in
+actions use their typed Yamloom shortcuts; unknown actions and newer unsupported inputs fall back
+to `action(...)`:
+
+```bash
+yamloom convert .github/workflows/checks.yml -o imported_workflow.py
+```
+
+For Maturin projects, `MaturinBuildSuite(...).jobs()` supplies maintained Linux, musllinux,
+Windows, macOS, and optional sdist jobs. Select the `cpython`, `free-threaded`, `pypy`, or `all`
+profile, and use typed platform records or callbacks for unusual setup requirements.
 
 ## Pre-commit
 
-Install and run the hooks:
+The hooks use the project/system `yamloom` executable so pre-commit does not compile the Rust
+extension in an isolated environment. Install Yamloom in the same tool or project environment,
+then configure the non-mutating check hook:
 
 ```yaml
 
   - repo: https://github.com/denehoffman/yamloom
     rev: v0.5.5
     hooks:
-      - id : yamloom-sync
+      - id: yamloom-check
       # args: ["--file", "path/to/workflow_builder.py"] # optional
 ```
+
+Use `yamloom-sync` instead if the hook should apply changes automatically.
 
 ```bash
 uv tool install pre-commit --with pre-commit-uv

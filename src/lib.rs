@@ -451,7 +451,7 @@ mod yamloom {
         types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple},
     };
     use yaml_rust2::{
-        Yaml,
+        Yaml, YamlLoader,
         yaml::{Array, Hash},
     };
 
@@ -464,6 +464,24 @@ mod yamloom {
             ObjectExpression, StringExpression, YamlExpression,
         },
     };
+
+    /// Parse a single YAML document and return its JSON representation.
+    ///
+    /// This private helper powers the YAML-to-Python converter without adding a
+    /// second YAML implementation to the Python package.
+    #[pyfunction]
+    fn _parse_yaml(source: &str) -> PyResult<String> {
+        let documents = YamlLoader::load_from_str(source)
+            .map_err(|error| PyValueError::new_err(error.to_string()))?;
+        if documents.len() != 1 {
+            return Err(PyValueError::new_err(format!(
+                "Expected one YAML document, found {}",
+                documents.len()
+            )));
+        }
+        let value = yaml_to_json(&documents[0])?;
+        serde_json::to_string(&value).map_err(|error| PyRuntimeError::new_err(error.to_string()))
+    }
 
     #[pymodule]
     mod expressions {
@@ -5912,6 +5930,7 @@ mod yamloom {
         push: Option<PushEvent>,
         registry_package: Option<RegistryPackageEvent>,
         release: Option<ReleaseEvent>,
+        repository_dispatch: Option<RepositoryDispatchEvent>,
         schedule: Option<ScheduleEvent>,
         status: bool,
         watch: Option<WatchEvent>,
@@ -6002,7 +6021,7 @@ mod yamloom {
         /// -----
         /// See `the documentation on GitHub <https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#branch_protection_rule>`_ for more details.
         #[new]
-        #[pyo3(signature = (*, branch_protection_rule=None, check_run=None, check_suite=None, create=false, delete=false, deployment=false, deployment_status=false, discussion=None, discussion_comment=None, fork=false, gollum=false, image_version=None, issue_comment=None, issues=None, label=None, merge_group=None, milestone=None, page_build=false, public=false, pull_request=None, pull_request_review=None, pull_request_review_comment=None, pull_request_target=None, push=None, registry_package=None, release=None, schedule=None, status=false, watch=None, workflow_call=None, workflow_dispatch=None, workflow_run=None))]
+        #[pyo3(signature = (*, branch_protection_rule=None, check_run=None, check_suite=None, create=false, delete=false, deployment=false, deployment_status=false, discussion=None, discussion_comment=None, fork=false, gollum=false, image_version=None, issue_comment=None, issues=None, label=None, merge_group=None, milestone=None, page_build=false, public=false, pull_request=None, pull_request_review=None, pull_request_review_comment=None, pull_request_target=None, push=None, registry_package=None, release=None, repository_dispatch=None, schedule=None, status=false, watch=None, workflow_call=None, workflow_dispatch=None, workflow_run=None))]
         fn new(
             branch_protection_rule: Option<BranchProtectionRuleEvent>,
             check_run: Option<CheckRunEvent>,
@@ -6030,6 +6049,7 @@ mod yamloom {
             push: Option<PushEvent>,
             registry_package: Option<RegistryPackageEvent>,
             release: Option<ReleaseEvent>,
+            repository_dispatch: Option<RepositoryDispatchEvent>,
             schedule: Option<ScheduleEvent>,
             status: bool,
             watch: Option<WatchEvent>,
@@ -6064,6 +6084,7 @@ mod yamloom {
                 push,
                 registry_package,
                 release,
+                repository_dispatch,
                 schedule,
                 status,
                 watch,
@@ -6207,6 +6228,13 @@ mod yamloom {
                     configured.insert_yaml("release", yaml);
                 } else {
                     simple_names.push("release");
+                }
+            }
+            if let Some(event) = &self.repository_dispatch {
+                if let Some(yaml) = event.maybe_as_yaml() {
+                    configured.insert_yaml("repository_dispatch", yaml);
+                } else {
+                    simple_names.push("repository_dispatch");
                 }
             }
             if let Some(event) = &self.schedule {

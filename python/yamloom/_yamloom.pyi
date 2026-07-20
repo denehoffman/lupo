@@ -25,6 +25,8 @@ StringOrBoolLike: TypeAlias = StringLike | BoolLike
 
 expressions: ModuleType
 
+def _parse_yaml(source: str) -> str: ...
+
 class Step: ...
 
 _TActionStep = TypeVar('_TActionStep', bound='ActionStep')
@@ -529,6 +531,7 @@ class Events:
         push: PushEvent | None = None,
         registry_package: RegistryPackageEvent | None = None,
         release: ReleaseEvent | None = None,
+        repository_dispatch: RepositoryDispatchEvent | None = None,
         schedule: ScheduleEvent | None = None,
         status: bool = False,
         watch: WatchEvent | None = None,

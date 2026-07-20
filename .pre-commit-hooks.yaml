@@ -1,5 +1,12 @@
-- id: yamloom-sync
-  name: yamloom workflow sync
-  entry: yamloom
-  language: python
+- id: yamloom-check
+  name: check yamloom workflows
+  entry: yamloom check
+  language: system
   pass_filenames: false
+  always_run: true
+- id: yamloom-sync
+  name: sync yamloom workflows
+  entry: yamloom sync
+  language: system
+  pass_filenames: false
+  always_run: true

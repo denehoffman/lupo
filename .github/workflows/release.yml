@@ -1,3 +1,4 @@
+# yamloom: generated from .yamloom.py
 ---
 name: Build and Release
 "on":
@@ -36,6 +37,7 @@ jobs:
       - run: uvx ty check
       - run: uv run pytest
   linux:
+    name: Build Linux Wheels
     permissions:
       contents: read
     needs:
@@ -53,8 +55,8 @@ jobs:
               - "3.11"
               - "3.12"
               - "3.13"
-              - 3.13t
               - "3.14"
+              - 3.13t
               - 3.14t
               - pypy3.11
           - runner: ubuntu-22.04
@@ -65,8 +67,8 @@ jobs:
               - "3.11"
               - "3.12"
               - "3.13"
-              - 3.13t
               - "3.14"
+              - 3.13t
               - 3.14t
               - pypy3.11
           - runner: ubuntu-22.04
@@ -77,8 +79,8 @@ jobs:
               - "3.11"
               - "3.12"
               - "3.13"
-              - 3.13t
               - "3.14"
+              - 3.13t
               - 3.14t
               - pypy3.11
           - runner: ubuntu-22.04
@@ -89,8 +91,8 @@ jobs:
               - "3.11"
               - "3.12"
               - "3.13"
-              - 3.13t
               - "3.14"
+              - 3.13t
               - 3.14t
               - pypy3.11
           - runner: ubuntu-22.04
@@ -101,8 +103,8 @@ jobs:
               - "3.11"
               - "3.12"
               - "3.13"
-              - 3.13t
               - "3.14"
+              - 3.13t
               - 3.14t
               - pypy3.11
           - runner: ubuntu-22.04
@@ -113,23 +115,23 @@ jobs:
               - "3.11"
               - "3.12"
               - "3.13"
-              - 3.13t
               - "3.14"
+              - 3.13t
               - 3.14t
               - pypy3.11
       fail-fast: false
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
-      - run: printf "%s\n" ${{ join(matrix.platform.python_versions, ' ') }} >> version.txt
+      - run: printf "%s\n" ${{ join(matrix.platform.python_versions, ' ') }} > .yamloom-python-versions
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version-file: version.txt
+          python-version-file: ".yamloom-python-versions"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          manylinux: auto
+          manylinux: "2014"
           target: ${{ matrix.platform.target }}
           sccache: ${{ !(startsWith(github.ref, 'refs/tags/')) }}
           args: --release --out dist --interpreter ${{ join(matrix.platform.python_versions, ' ') }}
@@ -139,6 +141,7 @@ jobs:
           path: dist
           name: wheels-linux-${{ matrix.platform.target }}
   musllinux:
+    name: Build musllinux Wheels
     permissions:
       contents: read
     needs:
@@ -156,8 +159,8 @@ jobs:
               - "3.11"
               - "3.12"
               - "3.13"
-              - 3.13t
               - "3.14"
+              - 3.13t
               - 3.14t
               - pypy3.11
           - runner: ubuntu-22.04
@@ -168,8 +171,8 @@ jobs:
               - "3.11"
               - "3.12"
               - "3.13"
-              - 3.13t
               - "3.14"
+              - 3.13t
               - 3.14t
               - pypy3.11
           - runner: ubuntu-22.04
@@ -180,8 +183,8 @@ jobs:
               - "3.11"
               - "3.12"
               - "3.13"
-              - 3.13t
               - "3.14"
+              - 3.13t
               - 3.14t
               - pypy3.11
           - runner: ubuntu-22.04
@@ -192,19 +195,19 @@ jobs:
               - "3.11"
               - "3.12"
               - "3.13"
-              - 3.13t
               - "3.14"
+              - 3.13t
               - 3.14t
               - pypy3.11
       fail-fast: false
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
-      - run: printf "%s\n" ${{ join(matrix.platform.python_versions, ' ') }} >> version.txt
+      - run: printf "%s\n" ${{ join(matrix.platform.python_versions, ' ') }} > .yamloom-python-versions
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version-file: version.txt
+          python-version-file: ".yamloom-python-versions"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -218,6 +221,7 @@ jobs:
           path: dist
           name: wheels-musllinux-${{ matrix.platform.target }}
   windows:
+    name: Build Windows Wheels
     permissions:
       contents: read
     needs:
@@ -235,8 +239,8 @@ jobs:
               - "3.11"
               - "3.12"
               - "3.13"
-              - 3.13t
               - "3.14"
+              - 3.13t
               - 3.14t
               - pypy3.11
             python_arch: x64
@@ -248,8 +252,8 @@ jobs:
               - "3.11"
               - "3.12"
               - "3.13"
-              - 3.13t
               - "3.14"
+              - 3.13t
               - 3.14t
             python_arch: x86
           - runner: windows-11-arm
@@ -263,11 +267,11 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
-      - run: printf "%s\n" ${{ join(matrix.platform.python_versions, ' ') }} >> version.txt
+      - run: printf "%s\n" ${{ join(matrix.platform.python_versions, ' ') }} > .yamloom-python-versions
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version-file: version.txt
+          python-version-file: ".yamloom-python-versions"
           architecture: ${{ matrix.platform.python_arch }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -281,6 +285,7 @@ jobs:
           path: dist
           name: wheels-windows-${{ matrix.platform.target }}
   macos:
+    name: Build macOS Wheels
     permissions:
       contents: read
     needs:
@@ -298,8 +303,8 @@ jobs:
               - "3.11"
               - "3.12"
               - "3.13"
-              - 3.13t
               - "3.14"
+              - 3.13t
               - 3.14t
               - pypy3.11
           - runner: macos-latest
@@ -310,19 +315,19 @@ jobs:
               - "3.11"
               - "3.12"
               - "3.13"
-              - 3.13t
               - "3.14"
+              - 3.13t
               - 3.14t
               - pypy3.11
       fail-fast: false
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
-      - run: printf "%s\n" ${{ join(matrix.platform.python_versions, ' ') }} >> version.txt
+      - run: printf "%s\n" ${{ join(matrix.platform.python_versions, ' ') }} > .yamloom-python-versions
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version-file: version.txt
+          python-version-file: ".yamloom-python-versions"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -345,7 +350,7 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
-      - name: Build sdist
+      - name: Build source distribution
         uses: PyO3/maturin-action@v1
         with:
           command: sdist

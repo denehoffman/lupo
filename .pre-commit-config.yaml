@@ -16,11 +16,14 @@ repos:
       - id: ty-check
         types_or: [ python, pyi ]
         additional_dependencies: [pytest]
-  - repo: https://github.com/denehoffman/yamloom
-    rev: yamloom-v0.5.4
+  - repo: local
     hooks:
-      - id: yamloom-sync
-        files: ^(\.github/workflows/.*\.ya?ml|\.yamloom\.py)$
+      - id: yamloom-check
+        name: check yamloom workflows
+        entry: yamloom check
+        language: system
+        pass_filenames: false
+        always_run: true
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.10
     hooks:
