@@ -21,7 +21,6 @@ def test_profiles_and_target_exclusions() -> None:
         '3.12',
         '3.13',
         '3.14',
-        '3.13t',
         '3.14t',
         'pypy3.11',
     )
