@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.1](https://github.com/denehoffman/yamloom/compare/yamloom-v0.6.0...yamloom-v0.6.1) (2026-07-20)
+
+
+### Bug Fixes
+
+* Maturin no longer uses 3.13t ([62d40e5](https://github.com/denehoffman/yamloom/commit/62d40e50aa33e78c7f597f7fba587c596f93bae2))
+* Update tests to remove 3.13t ([636b6e7](https://github.com/denehoffman/yamloom/commit/636b6e7cbb8dac702e4d176f098c05849515e3ad))
+
 ## [0.6.0](https://github.com/denehoffman/yamloom/compare/yamloom-v0.5.5...yamloom-v0.6.0) (2026-07-20)
 
 
