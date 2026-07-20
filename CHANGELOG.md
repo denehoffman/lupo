@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.0](https://github.com/denehoffman/yamloom/compare/yamloom-v0.5.5...yamloom-v0.6.0) (2026-07-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* add managed workflow sync and import tooling
+
+### Features
+
+* Add managed workflow sync and import tooling ([0556260](https://github.com/denehoffman/yamloom/commit/0556260ee7b650ee7a301f30e5005782c87989a8))
+
+
+### Bug Fixes
+
+* Bump minimum python version to 3.10 ([2119dbb](https://github.com/denehoffman/yamloom/commit/2119dbb7ad4f2f7a213bed972c93a3700e614121))
+* Ignore type checker error ([4f67a73](https://github.com/denehoffman/yamloom/commit/4f67a73b11a2fd60296e02d3135941d3339c4ce8))
+* **release-please:** Use GITHUB_TOKEN by default if no token is provided ([97174a5](https://github.com/denehoffman/yamloom/commit/97174a554b9511b2df0dc8e8f46bdf70bd136c98))
+
 ## [0.5.5](https://github.com/denehoffman/yamloom/compare/yamloom-v0.5.4...yamloom-v0.5.5) (2026-02-09)
 
 
