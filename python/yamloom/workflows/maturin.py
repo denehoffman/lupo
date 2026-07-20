@@ -17,7 +17,7 @@ SetupSteps = Callable[['MaturinPlatform'], Sequence[Step]]
 MaturinOptions = Callable[['MaturinPlatform'], Mapping[str, object]]
 
 CPYTHON_VERSIONS = ('3.9', '3.10', '3.11', '3.12', '3.13', '3.14')
-FREE_THREADED_VERSIONS = ('3.13t', '3.14t')
+FREE_THREADED_VERSIONS = ('3.14t',)
 PYPY_VERSIONS = ('pypy3.11',)
 
 
@@ -66,7 +66,7 @@ DEFAULT_MATURIN_PLATFORMS = (
                 'windows-11-arm',
                 'aarch64',
                 'arm64',
-                ('3.9', '3.10', '3.11', '3.13t', '3.14t', 'pypy3.11'),
+                ('3.9', '3.10', '3.11', '3.14t', 'pypy3.11'),
             ),
         ),
     ),
