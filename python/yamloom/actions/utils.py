@@ -1,3 +1,4 @@
+from __future__ import annotations
 from yamloom.actions.types import Ostrlike
 from collections.abc import Sequence
 

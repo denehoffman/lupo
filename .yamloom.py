@@ -27,6 +27,7 @@ build_jobs = MaturinBuildSuite(
     needs=['build-test-check'],
     condition=build_condition,
     sccache=~context.github.ref.startswith('refs/tags/'),
+    minimum_python='3.10',
 ).jobs()
 
 
@@ -42,7 +43,7 @@ release_workflow = Workflow(
             steps=[
                 Checkout(),
                 SetupRust(components=['clippy']),
-                SetupUV(python_version='3.9'),
+                SetupUV(python_version='3.10'),
                 script('cargo clippy'),
                 script('cargo test'),
                 script(

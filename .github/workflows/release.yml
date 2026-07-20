@@ -24,7 +24,7 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.9"
+          python-version: "3.10"
       - run: cargo clippy
       - run: cargo test
       - run: |-
@@ -50,7 +50,6 @@ jobs:
           - runner: ubuntu-22.04
             target: x86_64
             python_versions:
-              - "3.9"
               - "3.10"
               - "3.11"
               - "3.12"
@@ -62,7 +61,6 @@ jobs:
           - runner: ubuntu-22.04
             target: x86
             python_versions:
-              - "3.9"
               - "3.10"
               - "3.11"
               - "3.12"
@@ -74,7 +72,6 @@ jobs:
           - runner: ubuntu-22.04
             target: aarch64
             python_versions:
-              - "3.9"
               - "3.10"
               - "3.11"
               - "3.12"
@@ -86,7 +83,6 @@ jobs:
           - runner: ubuntu-22.04
             target: armv7
             python_versions:
-              - "3.9"
               - "3.10"
               - "3.11"
               - "3.12"
@@ -98,7 +94,6 @@ jobs:
           - runner: ubuntu-22.04
             target: s390x
             python_versions:
-              - "3.9"
               - "3.10"
               - "3.11"
               - "3.12"
@@ -110,7 +105,6 @@ jobs:
           - runner: ubuntu-22.04
             target: ppc64le
             python_versions:
-              - "3.9"
               - "3.10"
               - "3.11"
               - "3.12"
@@ -154,7 +148,6 @@ jobs:
           - runner: ubuntu-22.04
             target: x86_64
             python_versions:
-              - "3.9"
               - "3.10"
               - "3.11"
               - "3.12"
@@ -166,7 +159,6 @@ jobs:
           - runner: ubuntu-22.04
             target: x86
             python_versions:
-              - "3.9"
               - "3.10"
               - "3.11"
               - "3.12"
@@ -178,7 +170,6 @@ jobs:
           - runner: ubuntu-22.04
             target: aarch64
             python_versions:
-              - "3.9"
               - "3.10"
               - "3.11"
               - "3.12"
@@ -190,7 +181,6 @@ jobs:
           - runner: ubuntu-22.04
             target: armv7
             python_versions:
-              - "3.9"
               - "3.10"
               - "3.11"
               - "3.12"
@@ -234,7 +224,6 @@ jobs:
           - runner: windows-latest
             target: x64
             python_versions:
-              - "3.9"
               - "3.10"
               - "3.11"
               - "3.12"
@@ -247,7 +236,6 @@ jobs:
           - runner: windows-latest
             target: x86
             python_versions:
-              - "3.9"
               - "3.10"
               - "3.11"
               - "3.12"
@@ -298,7 +286,6 @@ jobs:
           - runner: macos-15-intel
             target: x86_64
             python_versions:
-              - "3.9"
               - "3.10"
               - "3.11"
               - "3.12"
@@ -310,7 +297,6 @@ jobs:
           - runner: macos-latest
             target: aarch64
             python_versions:
-              - "3.9"
               - "3.10"
               - "3.11"
               - "3.12"
