@@ -43,7 +43,7 @@ def _run_generator(mode: str, filename: str | None) -> int:
     # Workflow paths are deliberately anchored to the invocation directory. This is
     # deterministic in hooks and avoids accidentally adopting an unrelated parent repo.
     root = Path.cwd().resolve()
-    _begin_execution(mode, root, target)  # type: ignore[arg-type]
+    _begin_execution(mode, root, target)  # ty:ignore[invalid-argument-type]
     try:
         runpy.run_path(str(target), run_name='__main__')
     except Exception as exc:
